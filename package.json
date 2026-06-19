@@ -1,7 +1,7 @@
 {
-  "name": "rinex-api-gateway",
-  "version": "1.0.0",
-  "description": "Rinex API Gateway - Tüm API'ler tek noktada",
+  "name": "rinex-api-gateway-v2",
+  "version": "2.0.0",
+  "description": "Cloudflare korumalı API'ler için gateway",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

@@ -1,75 +1,84 @@
 const express = require('express');
-const axios = require('axios');
+const puppeteer = require('puppeteer-extra');
+const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const cors = require('cors');
-const crypto = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+// Stealth plugin ile Cloudflare korumasını aş
+puppeteer.use(StealthPlugin());
+
 app.use(cors());
 app.use(express.json());
 
-// ============================================
-// Cloudflare Korumasını Aşan İstek Fonksiyonu
-// ============================================
-async function fetchWithCF(url, options = {}) {
-    const defaultHeaders = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': '*/*',
-        'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-        'Sec-Fetch-Dest': 'empty',
-        'Sec-Fetch-Mode': 'cors',
-        'Sec-Fetch-Site': 'same-origin'
-    };
+// Browser instance (tekrar kullanım için)
+let browser = null;
 
-    try {
-        // İlk istek - cookie almak için
-        const response = await axios.get(url, {
-            headers: { ...defaultHeaders, ...options.headers },
-            timeout: 30000,
-            maxRedirects: 5,
-            validateStatus: status => true // Tüm durum kodlarını kabul et
+async function getBrowser() {
+    if (!browser) {
+        browser = await puppeteer.launch({
+            headless: 'new',
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-dev-shm-usage'
+            ]
         });
+    }
+    return browser;
+}
 
-        // Eğer JavaScript challenge varsa (__test cookie)
-        if (response.data && response.data.includes('__test')) {
-            console.log('🔐 Cloudflare challenge tespit edildi, çözülüyor...');
-            
-            // Cookie'yi al
-            const cookies = response.headers['set-cookie'] || [];
-            let testCookie = cookies.find(c => c.includes('__test='));
-            
-            if (testCookie) {
-                // Cookie'yi çıkart
-                const cookieValue = testCookie.split(';')[0];
-                
-                // İkinci istek - cookie ile
-                const finalResponse = await axios.get(url, {
-                    headers: {
-                        ...defaultHeaders,
-                        ...options.headers,
-                        'Cookie': cookieValue
-                    },
-                    timeout: 30000
-                });
-                
-                return finalResponse;
-            }
+// ============================================
+// Cloudflare korumalı siteyi aşan fonksiyon
+// ============================================
+async function fetchWithPuppeteer(url) {
+    const browser = await getBrowser();
+    const page = await browser.newPage();
+    
+    try {
+        // Gerçek tarayıcı gibi davran
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        await page.setExtraHTTPHeaders({
+            'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8'
+        });
+        
+        // Sayfayı aç
+        await page.goto(url, {
+            waitUntil: 'networkidle2',
+            timeout: 60000
+        });
+        
+        // Cloudflare challenge'ı bekle (maksimum 30 saniye)
+        await page.waitForFunction(
+            () => {
+                return !document.querySelector('body').innerHTML.includes('__test') &&
+                       !document.querySelector('body').innerHTML.includes('aes.js');
+            },
+            { timeout: 30000 }
+        );
+        
+        // Sayfa içeriğini al
+        const content = await page.content();
+        
+        // JSON verisini bulmaya çalış
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
         }
         
-        return response;
+        return { html: content };
+        
     } catch (error) {
-        console.error('Fetch hatası:', error.message);
+        console.error('Puppeteer hatası:', error.message);
         throw error;
+    } finally {
+        await page.close();
     }
 }
 
 // ============================================
-// 1. IBAN API - Cloudflare korumasını aşar
+// 1. IBAN API
 // ============================================
 app.get('/api/iban', async (req, res) => {
     try {
@@ -81,27 +90,14 @@ app.get('/api/iban', async (req, res) => {
             });
         }
 
-        const targetUrl = `https://rinexibansorguapi.rf.gd/api.php?iban=${iban}`;
+        const url = `https://rinexibansorguapi.rf.gd/api.php?iban=${iban}`;
+        const data = await fetchWithPuppeteer(url);
         
-        const response = await fetchWithCF(targetUrl, {
-            headers: {
-                'Origin': 'https://rinexibansorguapi.rf.gd',
-                'Referer': 'https://rinexibansorguapi.rf.gd/'
-            }
+        res.json({
+            success: true,
+            data: data,
+            source: 'rinexibansorguapi.rf.gd'
         });
-
-        // JSON ise formatla, değilse ham gönder
-        try {
-            const jsonData = JSON.parse(response.data);
-            res.json({
-                success: true,
-                data: jsonData,
-                source: 'rinexibansorguapi.rf.gd'
-            });
-        } catch {
-            res.set('Content-Type', 'text/plain');
-            res.send(response.data);
-        }
 
     } catch (error) {
         console.error('IBAN API Hatası:', error.message);
@@ -126,27 +122,14 @@ app.get('/api/plaka', async (req, res) => {
             });
         }
 
-        const response = await fetchWithCF(
-            `https://rinexplakasorguapi.gt.tc/api/plaka.php?endpoint=ara&q=${encodeURIComponent(q)}`,
-            {
-                headers: {
-                    'Origin': 'https://rinexplakasorguapi.gt.tc',
-                    'Referer': 'https://rinexplakasorguapi.gt.tc/'
-                }
-            }
-        );
-
-        try {
-            const jsonData = JSON.parse(response.data);
-            res.json({
-                success: true,
-                data: jsonData,
-                source: 'rinexplakasorguapi.gt.tc'
-            });
-        } catch {
-            res.set('Content-Type', 'text/plain');
-            res.send(response.data);
-        }
+        const url = `https://rinexplakasorguapi.gt.tc/api/plaka.php?endpoint=ara&q=${encodeURIComponent(q)}`;
+        const data = await fetchWithPuppeteer(url);
+        
+        res.json({
+            success: true,
+            data: data,
+            source: 'rinexplakasorguapi.gt.tc'
+        });
 
     } catch (error) {
         console.error('Plaka API Hatası:', error.message);
@@ -179,24 +162,13 @@ app.get('/api/papara', async (req, res) => {
             url += `?name=${encodeURIComponent(name)}`;
         }
 
-        const response = await fetchWithCF(url, {
-            headers: {
-                'Origin': 'http://rinexpaparasorguapi.rf.gd',
-                'Referer': 'http://rinexpaparasorguapi.rf.gd/'
-            }
+        const data = await fetchWithPuppeteer(url);
+        
+        res.json({
+            success: true,
+            data: data,
+            source: 'rinexpaparasorguapi.rf.gd'
         });
-
-        try {
-            const jsonData = JSON.parse(response.data);
-            res.json({
-                success: true,
-                data: jsonData,
-                source: 'rinexpaparasorguapi.rf.gd'
-            });
-        } catch {
-            res.set('Content-Type', 'text/plain');
-            res.send(response.data);
-        }
 
     } catch (error) {
         console.error('Papara API Hatası:', error.message);
@@ -238,24 +210,13 @@ app.get('/api/secmen', async (req, res) => {
             return res.status(400).json({ error: 'Geçersiz action. tc veya adsoyad kullanın' });
         }
 
-        const response = await fetchWithCF(url, {
-            headers: {
-                'Origin': 'https://rinexsecmensorguapu.gt.tc',
-                'Referer': 'https://rinexsecmensorguapu.gt.tc/'
-            }
+        const data = await fetchWithPuppeteer(url);
+        
+        res.json({
+            success: true,
+            data: data,
+            source: 'rinexsecmensorguapu.gt.tc'
         });
-
-        try {
-            const jsonData = JSON.parse(response.data);
-            res.json({
-                success: true,
-                data: jsonData,
-                source: 'rinexsecmensorguapu.gt.tc'
-            });
-        } catch {
-            res.set('Content-Type', 'text/plain');
-            res.send(response.data);
-        }
 
     } catch (error) {
         console.error('Seçmen API Hatası:', error.message);
@@ -281,27 +242,14 @@ app.get('/api/turktelekom', async (req, res) => {
             });
         }
 
-        const response = await fetchWithCF(
-            `https://rinexturktelekomapi.gt.tc/api/turktelekom.php?sorgu=${sorgu}&deger=${encodeURIComponent(deger)}`,
-            {
-                headers: {
-                    'Origin': 'https://rinexturktelekomapi.gt.tc',
-                    'Referer': 'https://rinexturktelekomapi.gt.tc/'
-                }
-            }
-        );
-
-        try {
-            const jsonData = JSON.parse(response.data);
-            res.json({
-                success: true,
-                data: jsonData,
-                source: 'rinexturktelekomapi.gt.tc'
-            });
-        } catch {
-            res.set('Content-Type', 'text/plain');
-            res.send(response.data);
-        }
+        const url = `https://rinexturktelekomapi.gt.tc/api/turktelekom.php?sorgu=${sorgu}&deger=${encodeURIComponent(deger)}`;
+        const data = await fetchWithPuppeteer(url);
+        
+        res.json({
+            success: true,
+            data: data,
+            source: 'rinexturktelekomapi.gt.tc'
+        });
 
     } catch (error) {
         console.error('TurkTelekom API Hatası:', error.message);
@@ -318,12 +266,12 @@ app.get('/api/turktelekom', async (req, res) => {
 // ============================================
 app.get('/', (req, res) => {
     res.json({
-        name: "Rinex API Gateway",
-        version: "2.0.0",
-        description: "Cloudflare korumalı API'ler için gateway",
+        name: "Rinex API Gateway v3",
+        version: "3.0.0",
+        description: "Puppeteer ile Cloudflare korumasını aşan API Gateway",
         features: [
-            "✅ Cloudflare korumasını aşar",
-            "✅ JavaScript challenge çözer",
+            "✅ Cloudflare JavaScript challenge çözer",
+            "✅ Gerçek tarayıcı simülasyonu",
             "✅ Tüm API'leri tek noktadan sunar"
         ],
         endpoints: {
@@ -371,6 +319,6 @@ app.use((req, res) => {
 // Sunucuyu Başlat
 // ============================================
 app.listen(PORT, () => {
-    console.log(`🚀 Rinex API Gateway v2 çalışıyor: http://localhost:${PORT}`);
-    console.log(`📡 Cloudflare korumasını aşan API hazır!`);
+    console.log(`🚀 Rinex API Gateway v3 çalışıyor: http://localhost:${PORT}`);
+    console.log(`🔐 Cloudflare korumasını Puppeteer ile aşıyor!`);
 });

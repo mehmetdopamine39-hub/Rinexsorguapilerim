@@ -151,7 +151,7 @@ def plaka_verileri_yukle():
         print(f"❌ Plaka hatası: {e}")
 
 def sicil_verileri_yukle():
-    """sicil.txt dosyasındaki verileri yükler"""
+    """sicil.txt dosyasındaki verileri yükler - Tüm formatları destekler"""
     global sicil_veriler, sicil_tc_dict, sicil_ad_soyad_dict
     sicil_veriler = []
     sicil_tc_dict = {}
@@ -166,37 +166,29 @@ def sicil_verileri_yukle():
         with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
             icerik = dosya.read()
             
+            # Önce JSON parse dene
             try:
-                veri_json = json.loads(icerik)
+                veri = json.loads(icerik)
                 
-                if 'Veri' in veri_json and veri_json['Veri']:
-                    for kayit in veri_json['Veri']:
-                        kisi = {
-                            'tc': kayit.get('AVUKAT_TC_KIMLIK_NO', '').strip(),
-                            'ad': kayit.get('KISI_ADI', '').strip(),
-                            'soyad': kayit.get('KISI_SOYAD', '').strip(),
-                            'dosya_no': kayit.get('DOSYA_NO', '').strip(),
-                            'suc': kayit.get('KISI_SUC_ADI', '').strip(),
-                            'kisi_tip': kayit.get('KISI_TIP_ADI', '').strip(),
-                            'kurum': kayit.get('KURUM_ADI', '').strip(),
-                            'avukat': f"{kayit.get('AVUKAT_ADI', '')} {kayit.get('AVUKAT_SOYADI', '')}".strip(),
-                            'avukat_tc': kayit.get('AVUKAT_TC_KIMLIK_NO', '').strip(),
-                            'avukat_sicil': kayit.get('AVUKAT_SICIL_NO', '').strip(),
-                            'durum': kayit.get('DOSYA_DURUM_ADI', '').strip(),
-                            'odeme': kayit.get('ODEME_DURUM_ADI', '').strip()
-                        }
-                        
-                        if kisi['tc'] or kisi['ad']:
-                            sicil_veriler.append(kisi)
-                            if kisi['tc']:
-                                sicil_tc_dict[kisi['tc']] = kisi
+                # Eğer liste ise
+                if isinstance(veri, list):
+                    for item in veri:
+                        if isinstance(item, dict):
+                            # Veri anahtarında veri varsa
+                            if 'Veri' in item and item['Veri']:
+                                for kayit in item['Veri']:
+                                    _sicil_kayit_ekle(kayit)
+                            # Direkt kayıt ise
+                            elif 'KISI_ADI' in item or 'AVUKAT_TC_KIMLIK_NO' in item:
+                                _sicil_kayit_ekle(item)
+                # Sözlük ise
+                elif isinstance(veri, dict):
+                    if 'Veri' in veri and veri['Veri']:
+                        for kayit in veri['Veri']:
+                            _sicil_kayit_ekle(kayit)
                             
-                            ad_soyad = f"{kisi['ad']} {kisi['soyad']}".strip()
-                            if ad_soyad:
-                                if ad_soyad not in sicil_ad_soyad_dict:
-                                    sicil_ad_soyad_dict[ad_soyad] = []
-                                sicil_ad_soyad_dict[ad_soyad].append(kisi)
             except json.JSONDecodeError:
+                # JSON değilse düz metin olarak oku
                 print("⚠️ Sicil dosyası JSON formatında değil, düz metin olarak okunuyor...")
                 for satir in icerik.split('\n'):
                     satir = satir.strip()
@@ -222,8 +214,41 @@ def sicil_verileri_yukle():
     except Exception as e:
         print(f"❌ Sicil hatası: {e}")
 
+def _sicil_kayit_ekle(kayit):
+    """Sicil kaydını veri yapılarına ekler"""
+    global sicil_veriler, sicil_tc_dict, sicil_ad_soyad_dict
+    
+    try:
+        kisi = {
+            'tc': kayit.get('AVUKAT_TC_KIMLIK_NO', '').strip() or kayit.get('TC', '').strip() or '',
+            'ad': kayit.get('KISI_ADI', '').strip() or kayit.get('AD', '').strip() or '',
+            'soyad': kayit.get('KISI_SOYAD', '').strip() or kayit.get('SOYAD', '').strip() or '',
+            'dosya_no': kayit.get('DOSYA_NO', '').strip() or '',
+            'suc': kayit.get('KISI_SUC_ADI', '').strip() or '',
+            'kisi_tip': kayit.get('KISI_TIP_ADI', '').strip() or '',
+            'kurum': kayit.get('KURUM_ADI', '').strip() or '',
+            'avukat': f"{kayit.get('AVUKAT_ADI', '')} {kayit.get('AVUKAT_SOYADI', '')}".strip() or '',
+            'avukat_tc': kayit.get('AVUKAT_TC_KIMLIK_NO', '').strip() or '',
+            'avukat_sicil': kayit.get('AVUKAT_SICIL_NO', '').strip() or '',
+            'durum': kayit.get('DOSYA_DURUM_ADI', '').strip() or '',
+            'odeme': kayit.get('ODEME_DURUM_ADI', '').strip() or ''
+        }
+        
+        if kisi['tc'] or kisi['ad']:
+            sicil_veriler.append(kisi)
+            if kisi['tc']:
+                sicil_tc_dict[kisi['tc']] = kisi
+            
+            ad_soyad = f"{kisi['ad']} {kisi['soyad']}".strip()
+            if ad_soyad:
+                if ad_soyad not in sicil_ad_soyad_dict:
+                    sicil_ad_soyad_dict[ad_soyad] = []
+                sicil_ad_soyad_dict[ad_soyad].append(kisi)
+    except Exception as e:
+        print(f"⚠️ Sicil kaydı eklenirken hata: {e}")
+
 def turknet_verileri_yukle():
-    """turknet.txt dosyasındaki verileri yükler"""
+    """turknet.txt dosyasındaki verileri yükler - Tüm formatları destekler"""
     global turknet_veriler, turknet_ad_dict, turknet_phone_dict
     turknet_veriler = []
     turknet_ad_dict = {}
@@ -238,31 +263,21 @@ def turknet_verileri_yukle():
         with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
             icerik = dosya.read()
             
+            # JSON parse dene
             try:
-                veri_listesi = json.loads(icerik)
+                veri = json.loads(icerik)
                 
-                if isinstance(veri_listesi, list):
-                    for kayit in veri_listesi:
+                # Liste ise
+                if isinstance(veri, list):
+                    for kayit in veri:
                         if isinstance(kayit, dict):
-                            kisi = {
-                                'ad': kayit.get('name', '').strip(),
-                                'telefon': kayit.get('phone', '').strip(),
-                                'il': kayit.get('city', '').strip(),
-                                'ilce': kayit.get('district', '').strip(),
-                                'adres': kayit.get('address', '').strip()
-                            }
-                            
-                            if kisi['ad'] or kisi['telefon']:
-                                turknet_veriler.append(kisi)
-                                
-                                if kisi['ad']:
-                                    if kisi['ad'] not in turknet_ad_dict:
-                                        turknet_ad_dict[kisi['ad']] = []
-                                    turknet_ad_dict[kisi['ad']].append(kisi)
-                                
-                                if kisi['telefon']:
-                                    turknet_phone_dict[kisi['telefon']] = kisi
+                            _turknet_kayit_ekle(kayit)
+                # Tek bir sözlük ise
+                elif isinstance(veri, dict):
+                    _turknet_kayit_ekle(veri)
+                    
             except json.JSONDecodeError:
+                # JSON değilse düz metin olarak oku
                 print("⚠️ TurkNet dosyası JSON formatında değil, düz metin olarak okunuyor...")
                 for satir in icerik.split('\n'):
                     satir = satir.strip()
@@ -278,19 +293,46 @@ def turknet_verileri_yukle():
                             'ilce': parcalar[3] if len(parcalar) > 3 else '',
                             'adres': parcalar[4] if len(parcalar) > 4 else ''
                         }
-                        turknet_veriler.append(kisi)
-                        if kisi['ad']:
-                            if kisi['ad'] not in turknet_ad_dict:
-                                turknet_ad_dict[kisi['ad']] = []
-                            turknet_ad_dict[kisi['ad']].append(kisi)
-                        if kisi['telefon']:
-                            turknet_phone_dict[kisi['telefon']] = kisi
+                        _turknet_kayit_ekle(kisi)
         
         print(f"✅ TurkNet: {len(turknet_veriler)} kayıt yüklendi.")
         print(f"   - {len(turknet_ad_dict)} benzersiz ad")
         print(f"   - {len(turknet_phone_dict)} benzersiz telefon")
     except Exception as e:
         print(f"❌ TurkNet hatası: {e}")
+
+def _turknet_kayit_ekle(kayit):
+    """TurkNet kaydını veri yapılarına ekler"""
+    global turknet_veriler, turknet_ad_dict, turknet_phone_dict
+    
+    try:
+        # Anahtar isimlerini normalize et
+        ad = kayit.get('name', kayit.get('ad', kayit.get('AD', ''))).strip()
+        telefon = kayit.get('phone', kayit.get('telefon', kayit.get('TELEFON', ''))).strip()
+        il = kayit.get('city', kayit.get('il', kayit.get('IL', ''))).strip()
+        ilce = kayit.get('district', kayit.get('ilce', kayit.get('ILCE', ''))).strip()
+        adres = kayit.get('address', kayit.get('adres', kayit.get('ADRES', ''))).strip()
+        
+        kisi = {
+            'ad': ad,
+            'telefon': telefon,
+            'il': il,
+            'ilce': ilce,
+            'adres': adres
+        }
+        
+        if kisi['ad'] or kisi['telefon']:
+            turknet_veriler.append(kisi)
+            
+            if kisi['ad']:
+                if kisi['ad'] not in turknet_ad_dict:
+                    turknet_ad_dict[kisi['ad']] = []
+                turknet_ad_dict[kisi['ad']].append(kisi)
+            
+            if kisi['telefon']:
+                turknet_phone_dict[kisi['telefon']] = kisi
+    except Exception as e:
+        print(f"⚠️ TurkNet kaydı eklenirken hata: {e}")
 
 def papara_verileri_yukle():
     """papara.txt dosyasındaki verileri yükler"""
@@ -407,8 +449,7 @@ def eokul_ana():
         'kullanım': {
             'tc': '/eokul/api?tc=11060326504',
             'ad': '/eokul/api?ad=gazel',
-            'soyad': '/eokul/api?soyad=atila',
-            'ad_soyad': '/eokul/api?ad=gazel&soyad=atila'
+            'soyad': '/eokul/api?soyad=atila'
         }
     })
 
@@ -449,8 +490,7 @@ def secmen_ana():
             'tc': '/secmen/api?tc=18445070762',
             'ad': '/secmen/api?ad=ahmet',
             'soyad': '/secmen/api?soyad=aydoğdu',
-            'il': '/secmen/api?il=adana',
-            'adres': '/secmen/api?adres=akdere'
+            'il': '/secmen/api?il=adana'
         }
     })
 
@@ -583,7 +623,7 @@ def papara_sorgula():
     
     return jsonify({'durum': 'hata', 'mesaj': 'Papara ID veya ad_soyad girin'}), 400
 
-# ==================== SİCİL API ====================
+# ==================== SİCİL API (DÜZELTİLDİ) ====================
 
 @app.route('/sicil', methods=['GET'])
 def sicil_ana():
@@ -607,42 +647,50 @@ def sicil_sorgula():
     ad = request.args.get('ad', '').strip()
     soyad = request.args.get('soyad', '').strip()
     
+    # TC ile sorgula
     if tc:
-        if tc in sicil_tc_dict:
-            return jsonify(sicil_tc_dict[tc])
+        # TC'yi normalize et
+        tc_temiz = re.sub(r'\s', '', tc)
+        for key in sicil_tc_dict:
+            key_temiz = re.sub(r'\s', '', key)
+            if tc_temiz == key_temiz:
+                return jsonify(sicil_tc_dict[key])
         return jsonify({'durum': 'hata', 'mesaj': f'{tc} TC bulunamadı'}), 404
     
+    # Ad ve Soyad ile sorgula
     if ad and soyad:
         ad_soyad = f"{ad} {soyad}".strip().upper()
         sonuc = []
-        for anahtar in sicil_ad_soyad_dict:
+        for anahtar, kayitlar in sicil_ad_soyad_dict.items():
             if ad_soyad in anahtar.upper():
-                sonuc.extend(sicil_ad_soyad_dict[anahtar])
+                sonuc.extend(kayitlar)
         if sonuc:
             return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
         return jsonify({'durum': 'hata', 'mesaj': f'{ad} {soyad} bulunamadı'}), 404
     
+    # Sadece Ad ile sorgula
     if ad:
         sonuc = []
-        for anahtar in sicil_ad_soyad_dict:
+        for anahtar, kayitlar in sicil_ad_soyad_dict.items():
             if ad.upper() in anahtar.upper():
-                sonuc.extend(sicil_ad_soyad_dict[anahtar])
+                sonuc.extend(kayitlar)
         if sonuc:
             return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
         return jsonify({'durum': 'hata', 'mesaj': f'{ad} bulunamadı'}), 404
     
+    # Sadece Soyad ile sorgula
     if soyad:
         sonuc = []
-        for anahtar in sicil_ad_soyad_dict:
+        for anahtar, kayitlar in sicil_ad_soyad_dict.items():
             if soyad.upper() in anahtar.upper():
-                sonuc.extend(sicil_ad_soyad_dict[anahtar])
+                sonuc.extend(kayitlar)
         if sonuc:
             return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
         return jsonify({'durum': 'hata', 'mesaj': f'{soyad} bulunamadı'}), 404
     
     return jsonify({'durum': 'hata', 'mesaj': 'Lütfen tc, ad veya soyad girin'}), 400
 
-# ==================== TURKNET API ====================
+# ==================== TURKNET API (DÜZELTİLDİ) ====================
 
 @app.route('/turknet', methods=['GET'])
 def turknet_ana():
@@ -654,7 +702,7 @@ def turknet_ana():
         'benzersiz_telefon': len(turknet_phone_dict),
         'kullanım': {
             'ad': '/turknet/api?ad=Egemen Kutay',
-            'telefon': '/turknet/api?telefon=05309566386'
+            'telefon': '/turknet/api?telefon=05539848500'
         }
     })
 
@@ -663,24 +711,62 @@ def turknet_sorgula():
     ad = request.args.get('ad', '').strip()
     telefon = request.args.get('telefon', '').strip()
     
+    # Telefon ile sorgula
     if telefon:
-        telefon_temiz = re.sub(r'\D', '', telefon)
+        telefon_temiz = re.sub(r'\s', '', telefon)
+        telefon_temiz = re.sub(r'\D', '', telefon_temiz)
+        
+        # Tam eşleşme ara
         for tel, kisi in turknet_phone_dict.items():
-            if telefon_temiz == re.sub(r'\D', '', tel):
+            tel_temiz = re.sub(r'\s', '', tel)
+            tel_temiz = re.sub(r'\D', '', tel_temiz)
+            if telefon_temiz == tel_temiz:
                 return jsonify(kisi)
         
-        sonuc = [k for k in turknet_veriler if k['telefon'] and telefon in k['telefon']]
+        # Kısmi eşleşme
+        sonuc = []
+        for kisi in turknet_veriler:
+            if kisi['telefon']:
+                tel_temiz = re.sub(r'\s', '', kisi['telefon'])
+                tel_temiz = re.sub(r'\D', '', tel_temiz)
+                if telefon_temiz in tel_temiz or tel_temiz in telefon_temiz:
+                    sonuc.append(kisi)
+        
         if sonuc:
             return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
         return jsonify({'durum': 'hata', 'mesaj': f'{telefon} bulunamadı'}), 404
     
+    # Ad ile sorgula
     if ad:
-        if ad in turknet_ad_dict:
-            return jsonify({'durum': 'başarılı', 'bulunan': len(turknet_ad_dict[ad]), 'sonuc': turknet_ad_dict[ad]})
+        ad_upper = ad.upper()
         
-        sonuc = [k for k in turknet_veriler if ad.upper() in k['ad'].upper()]
+        # Tam eşleşme ara
+        for name in turknet_ad_dict:
+            if ad_upper == name.upper():
+                return jsonify({'durum': 'başarılı', 'bulunan': len(turknet_ad_dict[name]), 'sonuc': turknet_ad_dict[name]})
+        
+        # Kısmi eşleşme
+        sonuc = []
+        for name, kayitlar in turknet_ad_dict.items():
+            if ad_upper in name.upper() or name.upper() in ad_upper:
+                sonuc.extend(kayitlar)
+        
+        # Adreslerde ara
+        if not sonuc:
+            for kisi in turknet_veriler:
+                if kisi['adres'] and ad_upper in kisi['adres'].upper():
+                    sonuc.append(kisi)
+        
         if sonuc:
-            return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+            # Benzersiz sonuçlar
+            benzersiz = []
+            seen = set()
+            for item in sonuc:
+                key = f"{item.get('ad', '')}_{item.get('telefon', '')}"
+                if key not in seen:
+                    seen.add(key)
+                    benzersiz.append(item)
+            return jsonify({'durum': 'başarılı', 'bulunan': len(benzersiz), 'sonuc': benzersiz})
         return jsonify({'durum': 'hata', 'mesaj': f'{ad} bulunamadı'}), 404
     
     return jsonify({'durum': 'hata', 'mesaj': 'Lütfen ad veya telefon girin'}), 400

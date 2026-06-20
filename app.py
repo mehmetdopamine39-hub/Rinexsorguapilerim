@@ -15,8 +15,8 @@ secmen_veriler = []
 secmen_dict = {}
 
 plaka_veriler = []
-plaka_plaka_dict = {}  # Plakaya göre ad-soyad listesi
-plaka_isim_dict = {}   # Ad-soyada göre plaka listesi
+plaka_plaka_dict = {}
+plaka_isim_dict = {}
 
 sicil_veriler = []
 sicil_tc_dict = {}
@@ -25,6 +25,10 @@ sicil_ad_soyad_dict = {}
 turknet_veriler = []
 turknet_ad_dict = {}
 turknet_phone_dict = {}
+
+papara_veriler = []
+papara_id_dict = {}      # Papara ID → Ad-Soyad
+papara_isim_dict = {}    # Ad-Soyad → Papara ID
 
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
 
@@ -119,12 +123,11 @@ def plaka_verileri_yukle():
                 if not satir:
                     continue
                 
-                # Plaka en sonda, ad-soyad önde
                 parcalar = satir.split()
                 if len(parcalar) >= 2:
-                    plaka = parcalar[-1]  # Son eleman plaka
-                    ad_soyad = ' '.join(parcalar[:-1])  # Geri kalan ad-soyad
-                    ad_soyad = ' '.join(ad_soyad.split())  # Fazla boşlukları temizle
+                    plaka = parcalar[-1]
+                    ad_soyad = ' '.join(parcalar[:-1])
+                    ad_soyad = ' '.join(ad_soyad.split())
                     
                     kisi = {
                         'ad_soyad': ad_soyad,
@@ -133,12 +136,10 @@ def plaka_verileri_yukle():
                     
                     plaka_veriler.append(kisi)
                     
-                    # Plakaya göre ad-soyad listesi (bir plakada birden fazla kişi olabilir)
                     if plaka not in plaka_plaka_dict:
                         plaka_plaka_dict[plaka] = []
                     plaka_plaka_dict[plaka].append(ad_soyad)
                     
-                    # Ad-soyada göre plaka listesi (bir kişinin birden fazla plakası olabilir)
                     if ad_soyad not in plaka_isim_dict:
                         plaka_isim_dict[ad_soyad] = []
                     plaka_isim_dict[ad_soyad].append(plaka)
@@ -291,6 +292,53 @@ def turknet_verileri_yukle():
     except Exception as e:
         print(f"❌ TurkNet hatası: {e}")
 
+def papara_verileri_yukle():
+    """papara.txt dosyasındaki verileri yükler"""
+    global papara_veriler, papara_id_dict, papara_isim_dict
+    papara_veriler = []
+    papara_id_dict = {}
+    papara_isim_dict = {}
+    
+    dosya_yolu = 'papara.txt'
+    if not os.path.exists(dosya_yolu):
+        print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
+        return
+    
+    try:
+        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
+            for satir in dosya:
+                satir = satir.strip()
+                if not satir:
+                    continue
+                
+                # CSV formatında: ID,AD SOYAD
+                parcalar = [p.strip() for p in satir.split(',')]
+                
+                if len(parcalar) >= 2:
+                    papara_id = parcalar[0]
+                    ad_soyad = parcalar[1]
+                    
+                    kisi = {
+                        'papara_id': papara_id,
+                        'ad_soyad': ad_soyad
+                    }
+                    
+                    papara_veriler.append(kisi)
+                    
+                    # Papara ID → Ad-Soyad
+                    papara_id_dict[papara_id] = ad_soyad
+                    
+                    # Ad-Soyad → Papara ID (birden fazla ID olabilir)
+                    if ad_soyad not in papara_isim_dict:
+                        papara_isim_dict[ad_soyad] = []
+                    papara_isim_dict[ad_soyad].append(papara_id)
+        
+        print(f"✅ Papara: {len(papara_veriler)} kayıt yüklendi.")
+        print(f"   - {len(papara_id_dict)} benzersiz ID")
+        print(f"   - {len(papara_isim_dict)} benzersiz kişi")
+    except Exception as e:
+        print(f"❌ Papara hatası: {e}")
+
 # ==================== CC DOĞRULAMA FONKSİYONLARI ====================
 
 def luhn_kontrol(kart_no):
@@ -352,8 +400,8 @@ def ana_sayfa():
     """Ana sayfa - API bilgileri"""
     return jsonify({
         'durum': 'başarılı',
-        'api': 'E-Okul & Seçmen & Plaka & CC & Sicil & TurkNet Sorgulama API',
-        'versiyon': '6.0',
+        'api': 'E-Okul & Seçmen & Plaka & CC & Sicil & TurkNet & Papara Sorgulama API',
+        'versiyon': '7.0',
         'veri_kaynaklari': {
             'eokul': {
                 'toplam': len(eokul_veriler),
@@ -382,6 +430,13 @@ def ana_sayfa():
                 'benzersiz_telefon': len(turknet_phone_dict),
                 'ornek': '/turknet/api?ad=Egemen Kutay'
             },
+            'papara': {
+                'toplam': len(papara_veriler),
+                'benzersiz_id': len(papara_id_dict),
+                'benzersiz_kisi': len(papara_isim_dict),
+                'ornek_idden': '/papara/api?papara_id=1354693996',
+                'ornek_isimden': '/papara/api?ad_soyad=MEHMET TEKER'
+            },
             'cc_dogrulama': {
                 'stripe_aktif': bool(STRIPE_SECRET_KEY),
                 'ornek': '/cc/dogrula'
@@ -392,26 +447,26 @@ def ana_sayfa():
                 '/eokul': 'E-Okul ana sayfası',
                 '/eokul/api?tc=TC': 'TC ile sorgula',
                 '/eokul/api?ad=AD': 'Ad ile sorgula',
-                '/eokul/api?soyad=SOYAD': 'Soyad ile sorgula',
-                '/eokul/api?ad=AD&soyad=SOYAD': 'Ad ve soyad ile sorgula'
+                '/eokul/api?soyad=SOYAD': 'Soyad ile sorgula'
             },
             'Seçmen': {
                 '/secmen': 'Seçmen ana sayfası',
                 '/secmen/api?tc=TC': 'TC ile sorgula',
-                '/secmen/api?ad=AD': 'Ad ile sorgula',
-                '/secmen/api?soyad=SOYAD': 'Soyad ile sorgula',
-                '/secmen/api?il=IL': 'İl ile sorgula',
-                '/secmen/api?adres=ADRES': 'Adres ile sorgula'
+                '/secmen/api?il=IL': 'İl ile sorgula'
             },
             'Plaka': {
                 '/plaka': 'Plaka ana sayfası',
-                '/plaka/api?plaka=PLAKA': 'Plakadan ad-soyad bul (41HU096 → CEVDET ALKIŞ)',
-                '/plaka/api?ad_soyad=AD SOYAD': 'Ad-soyaddan plaka bul (CEVDET ALKIŞ → 41HU096)'
+                '/plaka/api?plaka=PLAKA': 'Plakadan ad-soyad bul',
+                '/plaka/api?ad_soyad=AD SOYAD': 'Ad-soyaddan plaka bul'
+            },
+            'Papara (YENİ)': {
+                '/papara': 'Papara ana sayfası',
+                '/papara/api?papara_id=ID': 'Papara ID\'den ad-soyad bul',
+                '/papara/api?ad_soyad=AD SOYAD': 'Ad-soyaddan Papara ID bul'
             },
             'Sicil': {
                 '/sicil': 'Sicil ana sayfası',
-                '/sicil/api?tc=TC': 'TC ile sorgula',
-                '/sicil/api?ad=AD&soyad=SOYAD': 'Ad-Soyad ile sorgula'
+                '/sicil/api?tc=TC': 'TC ile sorgula'
             },
             'TurkNet': {
                 '/turknet': 'TurkNet ana sayfası',
@@ -421,8 +476,7 @@ def ana_sayfa():
             'CC Doğrulama': {
                 '/cc': 'CC ana sayfası',
                 '/cc/dogrula': 'Kart doğrulama (POST)',
-                '/cc/luhn': 'Luhn kontrolü (GET/POST)',
-                '/cc/bilgi': 'Format kontrolü (POST)'
+                '/cc/luhn': 'Luhn kontrolü'
             }
         }
     })
@@ -438,14 +492,12 @@ def eokul_ana():
         'kullanım': {
             'tc': '/eokul/api?tc=11060326504',
             'ad': '/eokul/api?ad=gazel',
-            'soyad': '/eokul/api?soyad=atila',
-            'ad_soyad': '/eokul/api?ad=gazel&soyad=atila'
+            'soyad': '/eokul/api?soyad=atila'
         }
     })
 
 @app.route('/eokul/api', methods=['GET'])
 def eokul_sorgula():
-    """TC, Ad, Soyad ile sorgula"""
     tc = request.args.get('tc', '').strip()
     ad = request.args.get('ad', '').strip()
     soyad = request.args.get('soyad', '').strip()
@@ -479,16 +531,12 @@ def secmen_ana():
         'toplam_kayit': len(secmen_veriler),
         'kullanım': {
             'tc': '/secmen/api?tc=18445070762',
-            'ad': '/secmen/api?ad=ahmet',
-            'soyad': '/secmen/api?soyad=aydoğdu',
-            'il': '/secmen/api?il=adana',
-            'adres': '/secmen/api?adres=akdere'
+            'il': '/secmen/api?il=adana'
         }
     })
 
 @app.route('/secmen/api', methods=['GET'])
 def secmen_sorgula():
-    """TC, Ad, Soyad, İl, Adres ile sorgula"""
     tc = request.args.get('tc', '').strip()
     ad = request.args.get('ad', '').strip()
     soyad = request.args.get('soyad', '').strip()
@@ -515,7 +563,7 @@ def secmen_sorgula():
         return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
     return jsonify({'durum': 'hata', 'mesaj': 'Kayıt bulunamadı'}), 404
 
-# ==================== PLAKA API (ÖZEL) ====================
+# ==================== PLAKA API ====================
 
 @app.route('/plaka', methods=['GET'])
 def plaka_ana():
@@ -523,56 +571,102 @@ def plaka_ana():
         'durum': 'başarılı',
         'api': 'Plaka Sorgulama API - Plaka ↔ Ad-Soyad Dönüşümü',
         'toplam_kayit': len(plaka_veriler),
-        'benzersiz_plaka': len(plaka_plaka_dict),
-        'benzersiz_kisi': len(plaka_isim_dict),
         'kullanım': {
-            'plaka_ile_sorgula': '/plaka/api?plaka=41HU096 → Ad-Soyad listesi verir',
-            'isim_ile_sorgula': '/plaka/api?ad_soyad=CEVDET ALKIŞ → Plaka listesi verir'
+            'plaka_ile': '/plaka/api?plaka=41HU096 → Ad-Soyad',
+            'isim_ile': '/plaka/api?ad_soyad=CEVDET ALKIŞ → Plaka'
         }
     })
 
 @app.route('/plaka/api', methods=['GET'])
 def plaka_sorgula():
-    """
-    PLAKA API - İki yönlü sorgu:
-    1. Plaka gir → Ad-Soyad listesi
-    2. Ad-Soyad gir → Plaka listesi
-    """
     plaka = request.args.get('plaka', '').strip().upper()
     ad_soyad = request.args.get('ad_soyad', '').strip().upper()
     
-    # 1. Plaka ile sorgula → Ad-Soyad listesi verir
     if plaka:
         if plaka in plaka_plaka_dict:
             return jsonify({
                 'durum': 'başarılı',
                 'plaka': plaka,
-                'kisi_sayisi': len(plaka_plaka_dict[plaka]),
                 'kisiler': plaka_plaka_dict[plaka]
             })
-        return jsonify({
-            'durum': 'hata',
-            'mesaj': f'{plaka} plakası bulunamadı'
-        }), 404
+        return jsonify({'durum': 'hata', 'mesaj': f'{plaka} plakası bulunamadı'}), 404
     
-    # 2. Ad-Soyad ile sorgula → Plaka listesi verir
     if ad_soyad:
-        # Tam eşleşme ara
         if ad_soyad in plaka_isim_dict:
             return jsonify({
                 'durum': 'başarılı',
                 'ad_soyad': ad_soyad,
-                'plaka_sayisi': len(plaka_isim_dict[ad_soyad]),
                 'plakalar': plaka_isim_dict[ad_soyad]
+            })
+        
+        sonuc = []
+        for isim, plakalar in plaka_isim_dict.items():
+            if ad_soyad in isim.upper():
+                sonuc.append({'ad_soyad': isim, 'plakalar': plakalar})
+        
+        if sonuc:
+            return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+        return jsonify({'durum': 'hata', 'mesaj': f'{ad_soyad} bulunamadı'}), 404
+    
+    return jsonify({'durum': 'hata', 'mesaj': 'Plaka veya ad_soyad girin'}), 400
+
+# ==================== PAPARA API (YENİ) ====================
+
+@app.route('/papara', methods=['GET'])
+def papara_ana():
+    return jsonify({
+        'durum': 'başarılı',
+        'api': 'Papara Sorgulama API - Papara ID ↔ Ad-Soyad Dönüşümü',
+        'toplam_kayit': len(papara_veriler),
+        'benzersiz_id': len(papara_id_dict),
+        'benzersiz_kisi': len(papara_isim_dict),
+        'kullanım': {
+            'papara_id_ile': '/papara/api?papara_id=1354693996 → Ad-Soyad',
+            'isim_ile': '/papara/api?ad_soyad=MEHMET TEKER → Papara ID'
+        }
+    })
+
+@app.route('/papara/api', methods=['GET'])
+def papara_sorgula():
+    """
+    PAPARA API - İki yönlü sorgu:
+    1. Papara ID gir → Ad-Soyad
+    2. Ad-Soyad gir → Papara ID
+    """
+    papara_id = request.args.get('papara_id', '').strip()
+    ad_soyad = request.args.get('ad_soyad', '').strip().upper()
+    
+    # 1. Papara ID ile sorgula → Ad-Soyad
+    if papara_id:
+        if papara_id in papara_id_dict:
+            return jsonify({
+                'durum': 'başarılı',
+                'papara_id': papara_id,
+                'ad_soyad': papara_id_dict[papara_id]
+            })
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': f'{papara_id} Papara ID bulunamadı'
+        }), 404
+    
+    # 2. Ad-Soyad ile sorgula → Papara ID
+    if ad_soyad:
+        # Tam eşleşme ara
+        if ad_soyad in papara_isim_dict:
+            return jsonify({
+                'durum': 'başarılı',
+                'ad_soyad': ad_soyad,
+                'papara_id_sayisi': len(papara_isim_dict[ad_soyad]),
+                'papara_idler': papara_isim_dict[ad_soyad]
             })
         
         # Kısmi eşleşme
         sonuc = []
-        for isim, plakalar in plaka_isim_dict.items():
+        for isim, idler in papara_isim_dict.items():
             if ad_soyad in isim.upper():
                 sonuc.append({
                     'ad_soyad': isim,
-                    'plakalar': plakalar
+                    'papara_idler': idler
                 })
         
         if sonuc:
@@ -589,8 +683,8 @@ def plaka_sorgula():
     
     return jsonify({
         'durum': 'hata',
-        'mesaj': 'Lütfen plaka veya ad_soyad girin',
-        'ornek': '/plaka/api?plaka=41HU096 veya /plaka/api?ad_soyad=CEVDET ALKIŞ'
+        'mesaj': 'Lütfen papara_id veya ad_soyad girin',
+        'ornek': '/papara/api?papara_id=1354693996 veya /papara/api?ad_soyad=MEHMET TEKER'
     }), 400
 
 # ==================== SİCİL API ====================
@@ -609,7 +703,6 @@ def sicil_ana():
 
 @app.route('/sicil/api', methods=['GET'])
 def sicil_sorgula():
-    """TC, Ad, Soyad ile sorgula"""
     tc = request.args.get('tc', '').strip()
     ad = request.args.get('ad', '').strip()
     soyad = request.args.get('soyad', '').strip()
@@ -665,7 +758,6 @@ def turknet_ana():
 
 @app.route('/turknet/api', methods=['GET'])
 def turknet_sorgula():
-    """Ad veya Telefon ile sorgula"""
     ad = request.args.get('ad', '').strip()
     telefon = request.args.get('telefon', '').strip()
     
@@ -823,6 +915,7 @@ if __name__ == '__main__':
     plaka_verileri_yukle()
     sicil_verileri_yukle()
     turknet_verileri_yukle()
+    papara_verileri_yukle()
     
     print("\n" + "="*50)
     print("📊 API DURUMU")
@@ -832,6 +925,7 @@ if __name__ == '__main__':
     print(f"   ✅ Plaka     : {len(plaka_veriler)} kayıt")
     print(f"   ✅ Sicil     : {len(sicil_veriler)} kayıt")
     print(f"   ✅ TurkNet   : {len(turknet_veriler)} kayıt")
+    print(f"   ✅ Papara    : {len(papara_veriler)} kayıt")
     print(f"   {'✅' if STRIPE_SECRET_KEY else '❌'} Stripe     : {'Aktif' if STRIPE_SECRET_KEY else 'Pasif'}")
     print("="*50)
     print("🚀 SUNUCU BAŞLATILIYOR...")

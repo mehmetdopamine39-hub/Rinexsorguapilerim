@@ -27,8 +27,8 @@ turknet_ad_dict = {}
 turknet_phone_dict = {}
 
 papara_veriler = []
-papara_id_dict = {}      # Papara ID → Ad-Soyad
-papara_isim_dict = {}    # Ad-Soyad → Papara ID
+papara_id_dict = {}
+papara_isim_dict = {}
 
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
 
@@ -311,7 +311,6 @@ def papara_verileri_yukle():
                 if not satir:
                     continue
                 
-                # CSV formatında: ID,AD SOYAD
                 parcalar = [p.strip() for p in satir.split(',')]
                 
                 if len(parcalar) >= 2:
@@ -324,11 +323,8 @@ def papara_verileri_yukle():
                     }
                     
                     papara_veriler.append(kisi)
-                    
-                    # Papara ID → Ad-Soyad
                     papara_id_dict[papara_id] = ad_soyad
                     
-                    # Ad-Soyad → Papara ID (birden fazla ID olabilir)
                     if ad_soyad not in papara_isim_dict:
                         papara_isim_dict[ad_soyad] = []
                     papara_isim_dict[ad_soyad].append(papara_id)
@@ -397,89 +393,8 @@ def kart_bilgilerini_kontrol(kart_no, ay, yil, cvv):
 
 @app.route('/', methods=['GET'])
 def ana_sayfa():
-    """Ana sayfa - API bilgileri"""
-    return jsonify({
-        'durum': 'başarılı',
-        'api': 'E-Okul & Seçmen & Plaka & CC & Sicil & TurkNet & Papara Sorgulama API',
-        'versiyon': '7.0',
-        'veri_kaynaklari': {
-            'eokul': {
-                'toplam': len(eokul_veriler),
-                'ornek': '/eokul/api?tc=11060326504'
-            },
-            'secmen': {
-                'toplam': len(secmen_veriler),
-                'ornek': '/secmen/api?tc=18445070762'
-            },
-            'plaka': {
-                'toplam': len(plaka_veriler),
-                'benzersiz_plaka': len(plaka_plaka_dict),
-                'benzersiz_kisi': len(plaka_isim_dict),
-                'ornek_plakadan': '/plaka/api?plaka=41HU096',
-                'ornek_isimden': '/plaka/api?ad_soyad=CEVDET ALKIŞ'
-            },
-            'sicil': {
-                'toplam': len(sicil_veriler),
-                'benzersiz_tc': len(sicil_tc_dict),
-                'benzersiz_ad_soyad': len(sicil_ad_soyad_dict),
-                'ornek': '/sicil/api?tc=19402658634'
-            },
-            'turknet': {
-                'toplam': len(turknet_veriler),
-                'benzersiz_ad': len(turknet_ad_dict),
-                'benzersiz_telefon': len(turknet_phone_dict),
-                'ornek': '/turknet/api?ad=Egemen Kutay'
-            },
-            'papara': {
-                'toplam': len(papara_veriler),
-                'benzersiz_id': len(papara_id_dict),
-                'benzersiz_kisi': len(papara_isim_dict),
-                'ornek_idden': '/papara/api?papara_id=1354693996',
-                'ornek_isimden': '/papara/api?ad_soyad=MEHMET TEKER'
-            },
-            'cc_dogrulama': {
-                'stripe_aktif': bool(STRIPE_SECRET_KEY),
-                'ornek': '/cc/dogrula'
-            }
-        },
-        'endpointler': {
-            'E-Okul': {
-                '/eokul': 'E-Okul ana sayfası',
-                '/eokul/api?tc=TC': 'TC ile sorgula',
-                '/eokul/api?ad=AD': 'Ad ile sorgula',
-                '/eokul/api?soyad=SOYAD': 'Soyad ile sorgula'
-            },
-            'Seçmen': {
-                '/secmen': 'Seçmen ana sayfası',
-                '/secmen/api?tc=TC': 'TC ile sorgula',
-                '/secmen/api?il=IL': 'İl ile sorgula'
-            },
-            'Plaka': {
-                '/plaka': 'Plaka ana sayfası',
-                '/plaka/api?plaka=PLAKA': 'Plakadan ad-soyad bul',
-                '/plaka/api?ad_soyad=AD SOYAD': 'Ad-soyaddan plaka bul'
-            },
-            'Papara (YENİ)': {
-                '/papara': 'Papara ana sayfası',
-                '/papara/api?papara_id=ID': 'Papara ID\'den ad-soyad bul',
-                '/papara/api?ad_soyad=AD SOYAD': 'Ad-soyaddan Papara ID bul'
-            },
-            'Sicil': {
-                '/sicil': 'Sicil ana sayfası',
-                '/sicil/api?tc=TC': 'TC ile sorgula'
-            },
-            'TurkNet': {
-                '/turknet': 'TurkNet ana sayfası',
-                '/turknet/api?ad=AD': 'Ad ile sorgula',
-                '/turknet/api?telefon=TELEFON': 'Telefon ile sorgula'
-            },
-            'CC Doğrulama': {
-                '/cc': 'CC ana sayfası',
-                '/cc/dogrula': 'Kart doğrulama (POST)',
-                '/cc/luhn': 'Luhn kontrolü'
-            }
-        }
-    })
+    """Ana sayfa - Sadece @rinexdestek yazısı"""
+    return "@rinexdestek"
 
 # ==================== E-OKUL API ====================
 
@@ -492,7 +407,8 @@ def eokul_ana():
         'kullanım': {
             'tc': '/eokul/api?tc=11060326504',
             'ad': '/eokul/api?ad=gazel',
-            'soyad': '/eokul/api?soyad=atila'
+            'soyad': '/eokul/api?soyad=atila',
+            'ad_soyad': '/eokul/api?ad=gazel&soyad=atila'
         }
     })
 
@@ -531,7 +447,10 @@ def secmen_ana():
         'toplam_kayit': len(secmen_veriler),
         'kullanım': {
             'tc': '/secmen/api?tc=18445070762',
-            'il': '/secmen/api?il=adana'
+            'ad': '/secmen/api?ad=ahmet',
+            'soyad': '/secmen/api?soyad=aydoğdu',
+            'il': '/secmen/api?il=adana',
+            'adres': '/secmen/api?adres=akdere'
         }
     })
 
@@ -571,6 +490,8 @@ def plaka_ana():
         'durum': 'başarılı',
         'api': 'Plaka Sorgulama API - Plaka ↔ Ad-Soyad Dönüşümü',
         'toplam_kayit': len(plaka_veriler),
+        'benzersiz_plaka': len(plaka_plaka_dict),
+        'benzersiz_kisi': len(plaka_isim_dict),
         'kullanım': {
             'plaka_ile': '/plaka/api?plaka=41HU096 → Ad-Soyad',
             'isim_ile': '/plaka/api?ad_soyad=CEVDET ALKIŞ → Plaka'
@@ -587,6 +508,7 @@ def plaka_sorgula():
             return jsonify({
                 'durum': 'başarılı',
                 'plaka': plaka,
+                'kisi_sayisi': len(plaka_plaka_dict[plaka]),
                 'kisiler': plaka_plaka_dict[plaka]
             })
         return jsonify({'durum': 'hata', 'mesaj': f'{plaka} plakası bulunamadı'}), 404
@@ -596,6 +518,7 @@ def plaka_sorgula():
             return jsonify({
                 'durum': 'başarılı',
                 'ad_soyad': ad_soyad,
+                'plaka_sayisi': len(plaka_isim_dict[ad_soyad]),
                 'plakalar': plaka_isim_dict[ad_soyad]
             })
         
@@ -610,7 +533,7 @@ def plaka_sorgula():
     
     return jsonify({'durum': 'hata', 'mesaj': 'Plaka veya ad_soyad girin'}), 400
 
-# ==================== PAPARA API (YENİ) ====================
+# ==================== PAPARA API ====================
 
 @app.route('/papara', methods=['GET'])
 def papara_ana():
@@ -628,15 +551,9 @@ def papara_ana():
 
 @app.route('/papara/api', methods=['GET'])
 def papara_sorgula():
-    """
-    PAPARA API - İki yönlü sorgu:
-    1. Papara ID gir → Ad-Soyad
-    2. Ad-Soyad gir → Papara ID
-    """
     papara_id = request.args.get('papara_id', '').strip()
     ad_soyad = request.args.get('ad_soyad', '').strip().upper()
     
-    # 1. Papara ID ile sorgula → Ad-Soyad
     if papara_id:
         if papara_id in papara_id_dict:
             return jsonify({
@@ -644,14 +561,9 @@ def papara_sorgula():
                 'papara_id': papara_id,
                 'ad_soyad': papara_id_dict[papara_id]
             })
-        return jsonify({
-            'durum': 'hata',
-            'mesaj': f'{papara_id} Papara ID bulunamadı'
-        }), 404
+        return jsonify({'durum': 'hata', 'mesaj': f'{papara_id} Papara ID bulunamadı'}), 404
     
-    # 2. Ad-Soyad ile sorgula → Papara ID
     if ad_soyad:
-        # Tam eşleşme ara
         if ad_soyad in papara_isim_dict:
             return jsonify({
                 'durum': 'başarılı',
@@ -660,32 +572,16 @@ def papara_sorgula():
                 'papara_idler': papara_isim_dict[ad_soyad]
             })
         
-        # Kısmi eşleşme
         sonuc = []
         for isim, idler in papara_isim_dict.items():
             if ad_soyad in isim.upper():
-                sonuc.append({
-                    'ad_soyad': isim,
-                    'papara_idler': idler
-                })
+                sonuc.append({'ad_soyad': isim, 'papara_idler': idler})
         
         if sonuc:
-            return jsonify({
-                'durum': 'başarılı',
-                'bulunan': len(sonuc),
-                'sonuc': sonuc
-            })
-        
-        return jsonify({
-            'durum': 'hata',
-            'mesaj': f'{ad_soyad} ismi bulunamadı'
-        }), 404
+            return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+        return jsonify({'durum': 'hata', 'mesaj': f'{ad_soyad} bulunamadı'}), 404
     
-    return jsonify({
-        'durum': 'hata',
-        'mesaj': 'Lütfen papara_id veya ad_soyad girin',
-        'ornek': '/papara/api?papara_id=1354693996 veya /papara/api?ad_soyad=MEHMET TEKER'
-    }), 400
+    return jsonify({'durum': 'hata', 'mesaj': 'Papara ID veya ad_soyad girin'}), 400
 
 # ==================== SİCİL API ====================
 
@@ -695,8 +591,12 @@ def sicil_ana():
         'durum': 'başarılı',
         'api': 'Sicil Sorgulama API',
         'toplam_kayit': len(sicil_veriler),
+        'benzersiz_tc': len(sicil_tc_dict),
+        'benzersiz_ad_soyad': len(sicil_ad_soyad_dict),
         'kullanım': {
             'tc': '/sicil/api?tc=19402658634',
+            'ad': '/sicil/api?ad=BERKAY',
+            'soyad': '/sicil/api?soyad=GENÇTÜRK',
             'ad_soyad': '/sicil/api?ad=BERKAY&soyad=GENÇTÜRK'
         }
     })
@@ -750,6 +650,8 @@ def turknet_ana():
         'durum': 'başarılı',
         'api': 'TurkNet Sorgulama API',
         'toplam_kayit': len(turknet_veriler),
+        'benzersiz_ad': len(turknet_ad_dict),
+        'benzersiz_telefon': len(turknet_phone_dict),
         'kullanım': {
             'ad': '/turknet/api?ad=Egemen Kutay',
             'telefon': '/turknet/api?telefon=05309566386'

@@ -7,10 +7,14 @@ CORS(app)
 
 # Verileri saklayacağımız listeler
 eokul_veriler = []
-eokul_dict = {}  # TC'ye göre hızlı erişim için
+eokul_dict = {}
 
 secmen_veriler = []
-secmen_dict = {}  # TC'ye göre hızlı erişim için
+secmen_dict = {}
+
+plaka_veriler = []
+plaka_dict = {}  # Plakaya göre
+isim_dict = {}   # İsme göre (birden fazla plaka olabilir)
 
 def eokul_verileri_yukle():
     """eokul.txt dosyasındaki verileri yükler"""
@@ -84,13 +88,67 @@ def secmen_verileri_yukle():
     except Exception as e:
         print(f"❌ Seçmen dosyası okunurken hata: {e}")
 
+def plaka_verileri_yukle():
+    """plaka.txt dosyasındaki verileri yükler"""
+    global plaka_veriler, plaka_dict, isim_dict
+    plaka_veriler = []
+    plaka_dict = {}
+    isim_dict = {}
+    
+    dosya_yolu = 'plaka.txt'
+    if not os.path.exists(dosya_yolu):
+        print(f"Uyarı: {dosya_yolu} dosyası bulunamadı!")
+        return
+    
+    try:
+        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
+            for satir in dosya:
+                satir = satir.strip()
+                if not satir:
+                    continue
+                
+                # Veriyi boşluklara göre ayır (plaka en sonda)
+                # Örnek: "CEVDET ALKIŞ                   41HU096"
+                # Plakayı bulmak için sondan bakalım
+                parcalar = satir.split()
+                if len(parcalar) >= 2:
+                    plaka = parcalar[-1]  # Son eleman plaka
+                    ad_soyad = ' '.join(parcalar[:-1])  # Geri kalanlar ad soyad
+                    
+                    # Fazla boşlukları temizle
+                    ad_soyad = ' '.join(ad_soyad.split())
+                    
+                    kisi = {
+                        'ad_soyad': ad_soyad,
+                        'plaka': plaka
+                    }
+                    
+                    plaka_veriler.append(kisi)
+                    
+                    # Plakaya göre indeksle (her plaka benzersiz olmalı)
+                    if plaka not in plaka_dict:
+                        plaka_dict[plaka] = []
+                    plaka_dict[plaka].append(ad_soyad)
+                    
+                    # İsme göre indeksle (bir kişinin birden fazla plakası olabilir)
+                    if ad_soyad not in isim_dict:
+                        isim_dict[ad_soyad] = []
+                    isim_dict[ad_soyad].append(plaka)
+        
+        print(f"✅ Plaka: {len(plaka_veriler)} kayıt yüklendi.")
+        print(f"   - {len(plaka_dict)} benzersiz plaka")
+        print(f"   - {len(isim_dict)} benzersiz kişi")
+        
+    except Exception as e:
+        print(f"❌ Plaka dosyası okunurken hata: {e}")
+
 @app.route('/', methods=['GET'])
 def ana_sayfa():
     """Ana sayfa - API bilgileri"""
     return jsonify({
         'durum': 'başarılı',
-        'api': 'E-Okul & Seçmen Sorgulama API',
-        'versiyon': '3.0',
+        'api': 'E-Okul & Seçmen & Plaka Sorgulama API',
+        'versiyon': '4.0',
         'veri_kaynaklari': {
             'eokul': {
                 'toplam': len(eokul_veriler),
@@ -99,6 +157,12 @@ def ana_sayfa():
             'secmen': {
                 'toplam': len(secmen_veriler),
                 'ornek': '/secmen/api?tc=18445070762'
+            },
+            'plaka': {
+                'toplam': len(plaka_veriler),
+                'benzersiz_plaka': len(plaka_dict),
+                'benzersiz_kisi': len(isim_dict),
+                'ornek': '/plaka/api?plaka=41HU096'
             }
         },
         'endpointler': {
@@ -109,8 +173,14 @@ def ana_sayfa():
             },
             'Seçmen': {
                 '/secmen': 'Seçmen ana sayfası',
-                '/secmen/api': 'Seçmen sorgula (tc, ad, soyad)',
+                '/secmen/api': 'Seçmen sorgula (tc, ad, soyad, il, adres)',
                 '/secmen/ara/<tc>': 'Seçmen TC ile ara (path)'
+            },
+            'Plaka': {
+                '/plaka': 'Plaka ana sayfası',
+                '/plaka/api': 'Plaka sorgula (plaka veya ad_soyad)',
+                '/plaka/plaka/<plaka>': 'Plakaya göre ara (path)',
+                '/plaka/isim/<ad_soyad>': 'İsme göre ara (path)'
             }
         }
     })
@@ -140,7 +210,6 @@ def eokul_sorgula():
     ad = request.args.get('ad', '').strip()
     soyad = request.args.get('soyad', '').strip()
     
-    # TC ile sorgu (tam eşleşme)
     if tc:
         if tc in eokul_dict:
             return jsonify(eokul_dict[tc])
@@ -151,7 +220,6 @@ def eokul_sorgula():
                 'sonuc': None
             }), 404
     
-    # Ad ve soyad ile sorgu
     if ad and soyad:
         sonuc = [
             kisi for kisi in eokul_veriler 
@@ -164,7 +232,6 @@ def eokul_sorgula():
             'sonuc': sonuc
         })
     
-    # Sadece ad ile sorgu
     if ad:
         sonuc = [
             kisi for kisi in eokul_veriler 
@@ -176,7 +243,6 @@ def eokul_sorgula():
             'sonuc': sonuc
         })
     
-    # Sadece soyad ile sorgu
     if soyad:
         sonuc = [
             kisi for kisi in eokul_veriler 
@@ -236,7 +302,6 @@ def secmen_sorgula():
     il = request.args.get('il', '').strip()
     adres = request.args.get('adres', '').strip()
     
-    # TC ile sorgu (tam eşleşme)
     if tc:
         if tc in secmen_dict:
             return jsonify(secmen_dict[tc])
@@ -249,22 +314,18 @@ def secmen_sorgula():
     
     sonuc = secmen_veriler
     
-    # Ad ile filtrele
     if ad:
         ad_upper = ad.upper()
         sonuc = [kisi for kisi in sonuc if ad_upper in kisi['ad'].upper()]
     
-    # Soyad ile filtrele
     if soyad:
         soyad_upper = soyad.upper()
         sonuc = [kisi for kisi in sonuc if soyad_upper in kisi['soyad'].upper()]
     
-    # İl ile filtrele
     if il:
         il_upper = il.upper()
         sonuc = [kisi for kisi in sonuc if il_upper in kisi['il'].upper()]
     
-    # Adres ile filtrele (kısmi eşleşme)
     if adres:
         adres_upper = adres.upper()
         sonuc = [kisi for kisi in sonuc if adres_upper in kisi['adres'].upper()]
@@ -295,12 +356,128 @@ def secmen_tc_ara(tc):
             'mesaj': f'{tc} TC numarası bulunamadı'
         }), 404
 
+# ==================== PLAKA API'leri ====================
+
+@app.route('/plaka', methods=['GET'])
+def plaka_ana():
+    """Plaka API ana sayfası"""
+    return jsonify({
+        'durum': 'başarılı',
+        'api': 'Plaka Sorgulama API',
+        'toplam_kayit': len(plaka_veriler),
+        'benzersiz_plaka': len(plaka_dict),
+        'benzersiz_kisi': len(isim_dict),
+        'ornek_kullanim': '/plaka/api?plaka=41HU096',
+        'kullanım': {
+            'plaka_ile': '/plaka/api?plaka=41HU096',
+            'isim_ile': '/plaka/api?ad_soyad=CEVDET ALKIŞ',
+            'path_plaka': '/plaka/plaka/41HU096',
+            'path_isim': '/plaka/isim/CEVDET ALKIŞ'
+        }
+    })
+
+@app.route('/plaka/api', methods=['GET'])
+def plaka_sorgula():
+    """Plaka sorgulama endpoint'i"""
+    plaka = request.args.get('plaka', '').strip().upper()
+    ad_soyad = request.args.get('ad_soyad', '').strip().upper()
+    
+    # Plaka ile sorgu
+    if plaka:
+        if plaka in plaka_dict:
+            # Plakaya ait tüm kişileri getir
+            kisiler = plaka_dict[plaka]
+            return jsonify({
+                'durum': 'başarılı',
+                'plaka': plaka,
+                'kisi_sayisi': len(kisiler),
+                'kisiler': kisiler
+            })
+        else:
+            return jsonify({
+                'durum': 'hata',
+                'mesaj': f'{plaka} plakası bulunamadı',
+                'sonuc': None
+            }), 404
+    
+    # İsim ile sorgu
+    if ad_soyad:
+        # Büyük/küçük harf duyarsız arama
+        bulunan = []
+        for kayit in plaka_veriler:
+            if ad_soyad in kayit['ad_soyad'].upper():
+                bulunan.append(kayit)
+        
+        if bulunan:
+            # Aynı isimde birden fazla plaka olabilir
+            plakalar = list(set([k['plaka'] for k in bulunan]))
+            return jsonify({
+                'durum': 'başarılı',
+                'ad_soyad': ad_soyad,
+                'plaka_sayisi': len(plakalar),
+                'plakalar': plakalar,
+                'detaylar': bulunan
+            })
+        else:
+            return jsonify({
+                'durum': 'hata',
+                'mesaj': f'{ad_soyad} ismi bulunamadı',
+                'sonuc': None
+            }), 404
+    
+    return jsonify({
+        'durum': 'hata',
+        'mesaj': 'Lütfen plaka veya ad_soyad parametresi girin',
+        'kullanım': '/plaka/api?plaka=41HU096 veya /plaka/api?ad_soyad=CEVDET ALKIŞ'
+    }), 400
+
+@app.route('/plaka/plaka/<plaka>', methods=['GET'])
+def plaka_ile_ara(plaka):
+    """Plakaya göre ara (path üzerinden)"""
+    plaka = plaka.strip().upper()
+    
+    if plaka in plaka_dict:
+        return jsonify({
+            'durum': 'başarılı',
+            'plaka': plaka,
+            'kisiler': plaka_dict[plaka]
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': f'{plaka} plakası bulunamadı'
+        }), 404
+
+@app.route('/plaka/isim/<ad_soyad>', methods=['GET'])
+def isim_ile_ara(ad_soyad):
+    """İsme göre ara (path üzerinden)"""
+    ad_soyad = ad_soyad.strip().upper()
+    
+    bulunan = []
+    for kayit in plaka_veriler:
+        if ad_soyad in kayit['ad_soyad'].upper():
+            bulunan.append(kayit)
+    
+    if bulunan:
+        return jsonify({
+            'durum': 'başarılı',
+            'ad_soyad': ad_soyad,
+            'bulunan': len(bulunan),
+            'sonuc': bulunan
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': f'{ad_soyad} ismi bulunamadı'
+        }), 404
+
 # ==================== UYGULAMA BAŞLATMA ====================
 
 if __name__ == '__main__':
     # Verileri yükle
     eokul_verileri_yukle()
     secmen_verileri_yukle()
+    plaka_verileri_yukle()
     
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)

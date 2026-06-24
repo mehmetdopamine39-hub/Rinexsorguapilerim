@@ -21,7 +21,7 @@ VERI_DOSYALARI = {
     'sicil': 'sicil.txt',
     'papara': 'papara.txt',
     'sgk': 'sgk.txt',
-    'universite': 'universite.txt'
+    'üniversite': 'üniversite.txt'
 }
 
 # SMS Bomber için
@@ -853,7 +853,7 @@ def ana_sayfa():
             </div>
             
             <div class="footer">
-                <p>🔗 Ana API: <a href="https://eokulsorguapi.onrender.com">eokulsorguapi.onrender.com</a></p>
+                <p>🔗 DESTEK HATTİ 📞: <a href="https://t.me/rinexdestek">eokulsorguapi.onrender.com</a></p>
                 <p>📌 Tüm sorgular JSON formatında döner</p>
             </div>
         </div>

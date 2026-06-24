@@ -41,11 +41,16 @@ sgk_veriler = []
 sgk_tc_dict = {}
 sgk_ad_soyad_dict = {}
 
+universite_veriler = []
+universite_tc_dict = {}          # TC'ye göre
+universite_ad_soyad_dict = {}    # Ad-Soyad'a göre
+universite_okul_dict = {}        # Okula göre
+
 # SMS Bomber için
 sms_threads = {}
 sms_results = {}
 
-# Telegram Bot Token (OPSİYONEL - SADECE EXTRA ÖZELLİKLER İÇİN)
+# Telegram Bot Token (OPSİYONEL)
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 
 STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY', '')
@@ -377,7 +382,6 @@ def papara_verileri_yukle():
         print(f"❌ Papara hatası: {e}")
 
 def sgk_verileri_yukle():
-    """sgk.txt dosyasındaki verileri yükler - HER FORMATI DESTEKLER"""
     global sgk_veriler, sgk_tc_dict, sgk_ad_soyad_dict
     sgk_veriler = []
     sgk_tc_dict = {}
@@ -395,10 +399,8 @@ def sgk_verileri_yukle():
                 if not satir:
                     continue
                 
-                # Önce virgül ile ayırmayı dene
                 parcalar = [p.strip() for p in satir.split(',')]
                 
-                # Eğer virgül yoksa boşluk veya | ile ayırmayı dene
                 if len(parcalar) < 3:
                     parcalar = [p.strip() for p in satir.split('|')]
                 if len(parcalar) < 3:
@@ -406,13 +408,10 @@ def sgk_verileri_yukle():
                 if len(parcalar) < 3:
                     parcalar = [p.strip() for p in satir.split()]
                 
-                # En az 3 parça olmalı (TC, Ad, Soyad)
                 if len(parcalar) >= 3:
                     tc = parcalar[0]
                     ad = parcalar[1]
                     soyad = parcalar[2]
-                    
-                    # 4. parça varsa durum bilgisi
                     durum = parcalar[3] if len(parcalar) > 3 else ""
                     
                     kisi = {
@@ -435,6 +434,75 @@ def sgk_verileri_yukle():
         print(f"   - {len(sgk_ad_soyad_dict)} benzersiz Ad-Soyad")
     except Exception as e:
         print(f"❌ SGK hatası: {e}")
+
+def universite_verileri_yukle():
+    """universite.txt dosyasındaki verileri yükler - HER FORMATI DESTEKLER"""
+    global universite_veriler, universite_tc_dict, universite_ad_soyad_dict, universite_okul_dict
+    universite_veriler = []
+    universite_tc_dict = {}
+    universite_ad_soyad_dict = {}
+    universite_okul_dict = {}
+    
+    dosya_yolu = 'universite.txt'
+    if not os.path.exists(dosya_yolu):
+        print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
+        return
+    
+    try:
+        with open(dosya_yolu, 'r', encoding='utf-8') as dosya:
+            icerik = dosya.read()
+            
+            # Blokları ayır (her blok "TC:" ile başlar)
+            bloklar = re.split(r'\n\s*(?=TC:)', icerik)
+            
+            for blok in bloklar:
+                if not blok.strip():
+                    continue
+                
+                # TC'yi bul
+                tc_match = re.search(r'TC:\s*([0-9]+)', blok)
+                if not tc_match:
+                    continue
+                tc = tc_match.group(1).strip()
+                
+                # Ad-Soyad'ı bul
+                ad_match = re.search(r'AD-SOYAD:\s*([^\n]+)', blok)
+                ad_soyad = ad_match.group(1).strip() if ad_match else ""
+                
+                # Üniversite'yi bul
+                univ_match = re.search(r'ÜNİVERSİTE:\s*([^\n]+)', blok)
+                universite = univ_match.group(1).strip() if univ_match else ""
+                
+                # Bölüm'ü bul
+                bolum_match = re.search(r'BÖLÜM:\s*([^\n]+)', blok)
+                bolum = bolum_match.group(1).strip() if bolum_match else ""
+                
+                if tc:
+                    kisi = {
+                        'tc': tc,
+                        'ad_soyad': ad_soyad,
+                        'universite': universite,
+                        'bolum': bolum
+                    }
+                    
+                    universite_veriler.append(kisi)
+                    universite_tc_dict[tc] = kisi
+                    
+                    if ad_soyad:
+                        if ad_soyad not in universite_ad_soyad_dict:
+                            universite_ad_soyad_dict[ad_soyad] = []
+                        universite_ad_soyad_dict[ad_soyad].append(kisi)
+                    
+                    if universite:
+                        universite_okul_dict[universite] = universite_okul_dict.get(universite, [])
+                        universite_okul_dict[universite].append(kisi)
+        
+        print(f"✅ Üniversite: {len(universite_veriler)} kayıt yüklendi.")
+        print(f"   - {len(universite_tc_dict)} benzersiz TC")
+        print(f"   - {len(universite_ad_soyad_dict)} benzersiz Ad-Soyad")
+        print(f"   - {len(universite_okul_dict)} benzersiz Üniversite")
+    except Exception as e:
+        print(f"❌ Üniversite hatası: {e}")
 
 # ==================== SMS BOMBER SINIFI ====================
 
@@ -1185,6 +1253,11 @@ def ana_sayfa():
                     <div class="desc">TC, Ad, Soyad ile sorgulama</div>
                 </div>
                 <div class="endpoint-card">
+                    <div class="name">🎓 Üniversite</div>
+                    <div class="path">/universite/api?tc=98097940397</div>
+                    <div class="desc">TC, Ad-Soyad, Okul ile sorgulama</div>
+                </div>
+                <div class="endpoint-card">
                     <div class="name">💣 SMS Bomber</div>
                     <div class="path">/smsbomber/bombala?telefon=5551234567</div>
                     <div class="desc">SMS bombası gönderir (0 olmadan)</div>
@@ -1635,7 +1708,7 @@ def smsbomber_liste():
         'sonuclar': sms_results
     })
 
-# ==================== SGK API (DÜZELTİLMİŞ) ====================
+# ==================== SGK API ====================
 
 @app.route('/sgk', methods=['GET'])
 def sgk_ana():
@@ -1649,28 +1722,15 @@ def sgk_ana():
             'ad_soyad': '/sgk/api?ad=ULAŞ&soyad=DEMİR',
             'ad': '/sgk/api?ad=ULAŞ',
             'soyad': '/sgk/api?soyad=DEMİR'
-        },
-        'ornek': {
-            'tc': '/sgk/api?tc=10001337050',
-            'ad_soyad': '/sgk/api?ad=ULAŞ&soyad=DEMİR'
         }
     })
 
 @app.route('/sgk/api', methods=['GET'])
 def sgk_sorgula():
-    """
-    SGK Sorgulama - Sadece TC, Ad, Soyad ile sorgu
-    Örnekler:
-    - /sgk/api?tc=10001337050
-    - /sgk/api?ad=ULAŞ&soyad=DEMİR
-    - /sgk/api?ad=ULAŞ
-    - /sgk/api?soyad=DEMİR
-    """
     tc = request.args.get('tc', '').strip()
     ad = request.args.get('ad', '').strip()
     soyad = request.args.get('soyad', '').strip()
     
-    # 1. TC ile sorgula (Tam eşleşme)
     if tc:
         if tc in sgk_tc_dict:
             return jsonify(sgk_tc_dict[tc])
@@ -1680,7 +1740,6 @@ def sgk_sorgula():
             'tc': tc
         }), 404
     
-    # 2. Ad ve Soyad ile sorgula (Kısmi eşleşme)
     if ad and soyad:
         aranan = f"{ad} {soyad}".strip().upper()
         sonuc = []
@@ -1689,7 +1748,6 @@ def sgk_sorgula():
             if aranan in anahtar or anahtar in aranan:
                 sonuc.extend(kisiler)
         
-        # Benzersiz sonuçlar
         benzersiz = []
         seen = set()
         for item in sonuc:
@@ -1710,7 +1768,6 @@ def sgk_sorgula():
             'aranan': f"{ad} {soyad}"
         }), 404
     
-    # 3. Sadece Ad ile sorgula
     if ad:
         sonuc = []
         ad_upper = ad.upper()
@@ -1739,7 +1796,6 @@ def sgk_sorgula():
             'aranan_ad': ad
         }), 404
     
-    # 4. Sadece Soyad ile sorgula
     if soyad:
         sonuc = []
         soyad_upper = soyad.upper()
@@ -1768,7 +1824,6 @@ def sgk_sorgula():
             'aranan_soyad': soyad
         }), 404
     
-    # 5. Hiç parametre yoksa
     return jsonify({
         'durum': 'hata',
         'mesaj': 'Lütfen tc, ad veya soyad parametresi girin',
@@ -1777,8 +1832,106 @@ def sgk_sorgula():
             'ad_soyad': '/sgk/api?ad=ULAŞ&soyad=DEMİR',
             'ad': '/sgk/api?ad=ULAŞ',
             'soyad': '/sgk/api?soyad=DEMİR'
-        },
-        'ornek': '/sgk/api?tc=10001337050'
+        }
+    }), 400
+
+# ==================== ÜNİVERSİTE API (YENİ) ====================
+
+@app.route('/universite', methods=['GET'])
+def universite_ana():
+    return jsonify({
+        'durum': 'başarılı',
+        'api': 'Üniversite Sorgulama API',
+        'aciklama': 'TC, Ad-Soyad veya Üniversite ile sorgulama',
+        'toplam_kayit': len(universite_veriler),
+        'benzersiz_tc': len(universite_tc_dict),
+        'benzersiz_ad_soyad': len(universite_ad_soyad_dict),
+        'benzersiz_okul': len(universite_okul_dict),
+        'kullanım': {
+            'tc': '/universite/api?tc=98097940397',
+            'ad_soyad': '/universite/api?ad_soyad=SİMAY AKSOY',
+            'universite': '/universite/api?universite=SÜLEYMAN DEMİREL ÜNİVERSİTESİ'
+        }
+    })
+
+@app.route('/universite/api', methods=['GET'])
+def universite_sorgula():
+    tc = request.args.get('tc', '').strip()
+    ad_soyad = request.args.get('ad_soyad', '').strip()
+    universite = request.args.get('universite', '').strip()
+    
+    # 1. TC ile sorgula
+    if tc:
+        if tc in universite_tc_dict:
+            return jsonify(universite_tc_dict[tc])
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': f'{tc} TC numarası bulunamadı',
+            'tc': tc
+        }), 404
+    
+    # 2. Ad-Soyad ile sorgula (Kısmi eşleşme)
+    if ad_soyad:
+        sonuc = []
+        for anahtar, kisiler in universite_ad_soyad_dict.items():
+            if ad_soyad.upper() in anahtar.upper() or anahtar.upper() in ad_soyad.upper():
+                sonuc.extend(kisiler)
+        
+        if sonuc:
+            benzersiz = []
+            seen = set()
+            for item in sonuc:
+                if item['tc'] not in seen:
+                    seen.add(item['tc'])
+                    benzersiz.append(item)
+            
+            return jsonify({
+                'durum': 'başarılı',
+                'aranan_ad_soyad': ad_soyad,
+                'bulunan': len(benzersiz),
+                'sonuc': benzersiz
+            })
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': f'{ad_soyad} bulunamadı',
+            'aranan_ad_soyad': ad_soyad
+        }), 404
+    
+    # 3. Üniversite ile sorgula (Kısmi eşleşme)
+    if universite:
+        sonuc = []
+        for okul, kisiler in universite_okul_dict.items():
+            if universite.upper() in okul.upper() or okul.upper() in universite.upper():
+                sonuc.extend(kisiler)
+        
+        if sonuc:
+            benzersiz = []
+            seen = set()
+            for item in sonuc:
+                if item['tc'] not in seen:
+                    seen.add(item['tc'])
+                    benzersiz.append(item)
+            
+            return jsonify({
+                'durum': 'başarılı',
+                'aranan_universite': universite,
+                'bulunan': len(benzersiz),
+                'sonuc': benzersiz
+            })
+        return jsonify({
+            'durum': 'hata',
+            'mesaj': f'{universite} üniversitesinde kayıt bulunamadı',
+            'aranan_universite': universite
+        }), 404
+    
+    return jsonify({
+        'durum': 'hata',
+        'mesaj': 'Lütfen tc, ad_soyad veya universite parametresi girin',
+        'kullanım': {
+            'tc': '/universite/api?tc=98097940397',
+            'ad_soyad': '/universite/api?ad_soyad=SİMAY AKSOY',
+            'universite': '/universite/api?universite=SÜLEYMAN DEMİREL ÜNİVERSİTESİ'
+        }
     }), 400
 
 # ==================== TELEGRAM API ====================
@@ -2028,18 +2181,20 @@ if __name__ == '__main__':
     turknet_verileri_yukle()
     papara_verileri_yukle()
     sgk_verileri_yukle()
+    universite_verileri_yukle()
     
     print("\n" + "="*50)
     print("📊 API DURUMU")
     print("="*50)
-    print(f"   ✅ E-Okul    : {len(eokul_veriler)} kayıt")
-    print(f"   ✅ Seçmen    : {len(secmen_veriler)} kayıt")
-    print(f"   ✅ Plaka     : {len(plaka_veriler)} kayıt")
-    print(f"   ✅ Sicil     : {len(sicil_veriler)} kayıt")
-    print(f"   ✅ TurkNet   : {len(turknet_veriler)} kayıt")
-    print(f"   ✅ Papara    : {len(papara_veriler)} kayıt")
-    print(f"   ✅ SGK       : {len(sgk_veriler)} kayıt")
-    print(f"   {'✅' if STRIPE_SECRET_KEY else '❌'} Stripe     : {'Aktif' if STRIPE_SECRET_KEY else 'Pasif'}")
+    print(f"   ✅ E-Okul     : {len(eokul_veriler)} kayıt")
+    print(f"   ✅ Seçmen     : {len(secmen_veriler)} kayıt")
+    print(f"   ✅ Plaka      : {len(plaka_veriler)} kayıt")
+    print(f"   ✅ Sicil      : {len(sicil_veriler)} kayıt")
+    print(f"   ✅ TurkNet    : {len(turknet_veriler)} kayıt")
+    print(f"   ✅ Papara     : {len(papara_veriler)} kayıt")
+    print(f"   ✅ SGK        : {len(sgk_veriler)} kayıt")
+    print(f"   ✅ Üniversite : {len(universite_veriler)} kayıt")
+    print(f"   {'✅' if STRIPE_SECRET_KEY else '❌'} Stripe      : {'Aktif' if STRIPE_SECRET_KEY else 'Pasif'}")
     print(f"   ✅ SMS Bomber : Aktif (16 servis)")
     print(f"   ✅ Telegram   : Token gerektirmez")
     print("="*50)

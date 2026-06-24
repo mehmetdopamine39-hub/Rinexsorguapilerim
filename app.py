@@ -21,7 +21,7 @@ VERI_DOSYALARI = {
     'sicil': 'sicil.txt',
     'papara': 'papara.txt',
     'sgk': 'sgk.txt',
-    'üniversite': 'üniversite.txt'
+    'üniversite': 'unuversite.txt'
 }
 
 # SMS Bomber için

@@ -443,7 +443,7 @@ def universite_verileri_yukle():
     universite_ad_soyad_dict = {}
     universite_okul_dict = {}
     
-    dosya_yolu = 'universite.txt'
+    dosya_yolu = 'üniversite.txt'
     if not os.path.exists(dosya_yolu):
         print(f"⚠️ Uyarı: {dosya_yolu} dosyası bulunamadı!")
         return
